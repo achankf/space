@@ -1,0 +1,10 @@
+{
+    "extends": [
+        "tslint:recommended"
+    ],
+    "rules": {
+        "no-console": false,
+        "no-debugger": false,
+        "max-line-length": false
+    }
+}

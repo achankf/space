@@ -1,6 +1,5 @@
-import { randomGenStrict } from "myalgo-ts";
-import { IMap, Terrain } from "../game";
 
+/*
 export function createEastVsWestMap(
     width: number,
     height: number,
@@ -8,9 +7,9 @@ export function createEastVsWestMap(
     const dimension = width * height;
     const terrains = new Array<Terrain>(dimension).fill(Terrain.Grassland);
     const map: IMap = {
-        width,
         height,
-        terrains
+        terrains,
+        width,
     };
 
     // create the ocean in the center
@@ -88,3 +87,4 @@ export function createEastVsWestMap(
     console.assert(map.terrains.length === dimension);
     return map;
 }
+*/
