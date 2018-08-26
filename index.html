@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+<meta name="viewport" content="width=device-width">
+<title>Page Title</title>
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    .restPanel {
+        grid-row: 2;
+        overflow: auto;
+        position: fixed;
+        bottom: 0;
+    }
+</style>
+
+<body>
+    <template id="nationView">
+        <style>
+            .container {
+                display: grid;
+                grid-template-columns: 10em;
+                height: 100%;
+            }
+
+            .list {
+                grid-row: 1;
+                overflow: auto;
+                border-right: 1px solid;
+                padding: 2px;
+            }
+
+            .contentContainer {
+                grid-row: 1;
+                padding: 2px;
+            }
+
+            .content {
+                display: flex;
+                flex-flow: row wrap;
+            }
+        </style>
+
+        <div class="container">
+            <div class="list">
+                <div>Space USA</div>
+                <div>Space Poland</div>
+                <div>Space France</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+                <div>A</div>
+            </div>
+            <div class="contentContainer">
+                <h1>Space USA</h1>
+
+                <h2>Basic Info</h2>
+                <div class="content">
+                    <fieldset>
+                        <legend>Info</legend>
+                        <table>
+                            <tr>
+                                <td>Population</td>
+                                <td>1111232</td>
+                            </tr>
+                            <tr>
+                                <td>Industrial Capacity</td>
+                                <td>124321</td>
+                            </tr>
+                            <tr>
+                                <td># Colonies</td>
+                                <td>13</td>
+                            </tr>
+                            <tr>
+                                <td># Planets</td>
+                                <td>4</td>
+                            </tr>
+                            <tr>
+                                <td>Galactic Influence</td>
+                                <td>1234</td>
+                            </tr>
+                        </table>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Policy</legend>
+                        <table>
+                            <tr>
+                                <td>Policy 1</td>
+                                <td>effect</td>
+                            </tr>
+                            <tr>
+                                <td>Policy 2</td>
+                                <td>effect</td>
+                            </tr>
+                        </table>
+                    </fieldset>
+                </div>
+
+                <h2>Politics</h2>
+
+                <h3>Space Party 1</h3>
+                <div class="contents">
+                    <fieldset>
+                        <legend>Power</legend>
+                        <table>
+                            <tr>
+                                <td>Influence</td>
+                                <td>3321</td>
+                            </tr>
+                            <tr>
+                                <td>Seats</td>
+                                <td>321</td>
+                            </tr>
+                            <tr>
+                                <td>Ideology</td>
+                                <td>0.5075 (average of all members)</td>
+                            </tr>
+                            <tr>
+                                <td>Standard Deviation</td>
+                                <td>0.17711225254059</td>
+                            </tr>
+                        </table>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Membership</legend>
+                        <table>
+                            <tr>
+                                <th>Name</th>
+                                <th>Leader</th>
+                                <th>Ideology</th>
+                                <th>Ideologic Difference (abs(z score))</th>
+                                <th>Loyalty</th>
+                                <th>Political Power</th>
+                                <th>Role</th>
+                            </tr>
+                            <tr>
+                                <td>Tim</td>
+                                <td>✓</td>
+                                <td>0.4</td>
+                                <td>0.60696</td>
+                                <td>100</td>
+                                <td>321</td>
+                                <td>President (head of state)</td>
+                            </tr>
+                            <tr>
+                                <td>Tim</td>
+                                <td></td>
+                                <td>0.49</td>
+                                <td>0.09881</td>
+                                <td>75</td>
+                                <td>123</td>
+                                <td>Senator of Planet 4 (head of planet)</td>
+                            </tr>
+                            <tr>
+                                <td>Tim</td>
+                                <td></td>
+                                <td>0.34</td>
+                                <td>0.94573</td>
+                                <td>73</td>
+                                <td>123</td>
+                                <td>Governor of Colony C, Planet 14 (head of colony)</td>
+                            </tr>
+                            <tr>
+                                <td>Tim</td>
+                                <td></td>
+                                <td>0.8</td>
+                                <td>1.6515</td>
+                                <td>23</td>
+                                <td>32</td>
+                                <td>Free</td>
+                            </tr>
+                        </table>
+                    </fieldset>
+                </div>
+
+                <h2>Policies</h2>
+
+                <h2>Spacecrafts</h2>
+                <fieldset>
+                    <legend>Stats</legend>
+                    <table>
+                        <tr>
+                            <td>Freighter</td>
+                            <td>1223</td>
+                        </tr>
+                        <tr>
+                            <td>Corvette</td>
+                            <td>123</td>
+                        </tr>
+                        <tr>
+                            <td>Destroyer</td>
+                            <td>23</td>
+                        </tr>
+                    </table>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Latest Design</legend>
+                    <table>
+                        <thead>
+                            <tr>
+                                <td>Name</td>
+                                <td>Hull</td>
+                                <td>Cargo</td>
+                                <td>Fuel</td>
+                                <td>Ammo</td>
+                                <td>Engine</td>
+                                <td>Beam</td>
+                                <td>Shield</td>
+                                <td>Missile</td>
+                                <td>Countermeasure</td>
+                                <td>Gun</td>
+                                <td>Armor</td>
+                            </tr>
+                        </thead>
+                        <tr>
+                            <td>Freighter</td>
+                            <td>200</td>
+                            <td>100</td>
+                        </tr>
+                        <tr>
+                            <td>Corvette</td>
+                            <td>50</td>
+                        </tr>
+                        <tr>
+                            <td>Destroyer</td>
+                            <td>100</td>
+                        </tr>
+                    </table>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Fleets</legend>
+                    <table>
+                        <tr>
+                            <td>Name</td>
+                            <td>Base</td>
+                            <td>Location</td>
+                            <td>Speed</td>
+                            <td>#Ships</td>
+                            <td>Fire Power</td>
+                        </tr>
+                    </table>
+                </fieldset>
+            </div>
+        </div>
+    </template>
+
+    <template id="planetView">
+        <style>
+            .map {
+                border-collapse: collapse;
+                font-family: monospace;
+                border-spacing: 0;
+            }
+
+            .map td {
+                height: 15px;
+                width: 15px;
+                cursor: pointer;
+                color: black;
+                background-color: green;
+            }
+
+            .container {
+                display: flex;
+                flex-flow: row wrap;
+            }
+
+            .container>* {
+                flex: 1 0;
+            }
+
+            fieldset {
+                display: flex;
+                flex-flow: row wrap;
+            }
+
+            fieldset>* {
+                padding: 1em;
+            }
+
+            fieldset>table {
+                width: 100%;
+            }
+        </style>
+        <h1 class="name"></h1>
+        <div class="container">
+            <fieldset>
+                <legend>
+                    <h2>Map</h2>
+                </legend>
+                <table class="map">
+                    <tbody></tbody>
+                </table>
+                <table>
+                    <tr>
+                        <td>Coor</td>
+                        <td class="tile"></td>
+                    </tr>
+                    <tr>
+                        <td>Political Control</td>
+                        <td class="polOwner"></td>
+                    </tr>
+                    <tr>
+                        <td>Victory Points</td>
+                        <td>12</td>
+                    </tr>
+                    <tr>
+                        <td>Population</td>
+                        <td>12345</td>
+                    </tr>
+                    <tr>
+                        <td>Industry Efficiency</td>
+                        <td>1.46</td>
+                    </tr>
+                </table>
+
+                <table>
+                    <caption>Development</caption>
+                    <tr>
+                        <td>Type</td>
+                        <td>Demand</td>
+                        <td>Satfisfied</td>
+                    </tr>
+                    <tr>
+                        <td>Consumption</td>
+                        <td>123456</td>
+                        <td>123456</td>
+                    </tr>
+                    <tr>
+                        <td>Education</td>
+                        <td>123456</td>
+                        <td>123456</td>
+                    </tr>
+                    <tr>
+                        <td>Health</td>
+                        <td>123456</td>
+                        <td>123456</td>
+                    </tr>
+                    <tr>
+                        <td>Development</td>
+                        <td>123456</td>
+                        <td>123456</td>
+                    </tr>
+                    <tr>
+                        <td>Infrastructure</td>
+                        <td>123456</td>
+                        <td>123456</td>
+                    </tr>
+                    <tr>
+                        <td>Energy</td>
+                        <td>123456</td>
+                        <td>123456</td>
+                    </tr>
+                </table>
+
+                <table>
+                    <caption>Influence</caption>
+                    <tr>
+                        <td>Allegiance</td>
+                        <td>Influence</td>
+                        <td>Total</td>
+                        <td>%</td>
+                    </tr>
+                    <tr>
+                        <td>Nation 1</td>
+                        <td>
+                            <table>
+                                <tr>
+                                    <td>Corp 1</td>
+                                    <td>123</td>
+                                </tr>
+                                <tr>
+                                    <td>Corp 2</td>
+                                    <td>422</td>
+                                </tr>
+                            </table>
+                        </td>
+                        <td>545</td>
+                        <td>100%</td>
+                    </tr>
+                </table>
+
+                <table>
+                    <caption>Construction Queue</caption>
+                    <tr>
+                        <td>Name</td>
+                        <td>Qty</td>
+                        <td>Ticks to completion</td>
+                    </tr>
+                    <tr>
+                        <td>Hospital</td>
+                        <td>5</td>
+                        <td>1234</td>
+                    </tr>
+                    <tr>
+                        <td>Hospital</td>
+                        <td>5</td>
+                        <td>1234</td>
+                    </tr>
+                </table>
+                <div class="colonyLobbyViewContainer"></div>
+
+            </fieldset>
+        </div>
+    </template>
+
+    <template id="colonyLobbyView">
+        <table>
+            <caption>
+                <h3>Lobbying</h3>
+            </caption>
+            <tr>
+                <td>Fund Colonial Venture</td>
+                <td></td>
+                <td><button>Do It</button></td>
+            </tr>
+            <tr>
+                <td>Invest in industry</td>
+                <td><input type="range"></td>
+                <td><button>Do It</button></td>
+            </tr>
+            <tr>
+                <td>Expand Hospital</td>
+                <td>
+                </td>
+                <td><button>Submit</button></td>
+            </tr>
+            <tr>
+                <td>Expand Police</td>
+                <td>
+                </td>
+                <td><button>Submit</button></td>
+            </tr>
+            <tr>
+                <td>Expand School</td>
+                <td>
+                </td>
+                <td><button>Submit</button></td>
+            </tr>
+        </table>
+    </template>
+
+    <template id="colonyView">
+        <legend>
+            <h2>Government</h2>
+        </legend>
+        <table>
+            <caption>
+                <h3>Stats</h3>
+            </caption>
+            <tbody>
+                <tr>
+                    <td>Population</td>
+                    <td>15623453</td>
+                </tr>
+                <tr>
+                    <td>Growth</td>
+                    <td>2.1%</td>
+                </tr>
+                <tr>
+                    <td>Consumption Rating</td>
+                    <td>64</td>
+                </tr>
+                <tr>
+                    <td>Education</td>
+                    <td>46%</td>
+                </tr>
+                <tr>
+                    <td>Health</td>
+                    <td>64%</td>
+                </tr>
+                <tr>
+                    <td>Development</td>
+                    <td>54%</td>
+                </tr>
+                <tr>
+                    <td>Avg. Infrastructure</td>
+                    <td>74%</td>
+                </tr>
+                <tr>
+                    <td>Energy Consumption</td>
+                    <td>74%</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table>
+            <caption>
+                <h3>Market</h3>
+            </caption>
+            <thead>
+                <tr>
+                    <th>Commodity</th>
+                    <th>Demand</th>
+                    <th>Supply</th>
+                    <th>Production</th>
+                </tr>
+            </thead>
+            <tbody class="marketTable">
+                <template class="marketRow">
+                    <tr>
+                        <td class="comType"></td>
+                        <td class="comDemand"></td>
+                        <td></td>
+                        <td class="comSupply"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+
+        <table>
+            <caption>
+                <h3>Marketing</h3>
+            </caption>
+            <tr>
+                <td>Budget</td>
+                <td>
+                    <input class="marketBudget" type="range" min="0" max="1" step="0.01">
+                </td>
+            </tr>
+            <tr>
+                <td>Market Share</td>
+                <td class="marketShare">0</td>
+            </tr>
+            <tr>
+                <td>Penetration</td>
+                <td class="penetration">0</td>
+            </tr>
+        </table>
+
+        <table>
+            <caption>
+                <h3>Donation</h3>
+            </caption>
+            <tr>
+                <td>Budget</td>
+                <td><input class="donationBudget" type="range" min="0" max="1" step="0.01"></td>
+            </tr>
+            <tr>
+                <td>Public Construction</td>
+                <td>0</td>
+            </tr>
+            <tr>
+                <td>Influence</td>
+                <td>0</td>
+            </tr>
+        </table>
+
+        <table>
+            <caption>
+                <h3>Storage</h3>
+            </caption>
+            <tr>
+                <td>
+                    <div>Storage</div>
+                </td>
+                <td class="storeUsed">0</td>
+            </tr>
+            <tr>
+                <td>Limit</td>
+                <td class="storeLimit">0</td>
+            </tr>
+        </table>
+
+        <table>
+            <caption>
+                <h3>Lobbying</h3>
+            </caption>
+            <tbody>
+                <tr>
+                    <td>Allegiance</td>
+                    <td>Space USA</td>
+                </tr>
+                <tr>
+                    <td>Has Operating Rights</td>
+                    <td>Yes</td>
+                </tr>
+                <tr>
+                    <td>Infrastructure Projects ($10000)</td>
+                    <td><button>Fund</button></td>
+                </tr>
+                <tr>
+                    <td>Donate something (todo)</td>
+                    <td><button>Do It</button></td>
+                </tr>
+            </tbody>
+        </table>
+    </template>
+
+    <template id="stationView">
+        <style>
+            .map {
+                border-collapse: collapse;
+                font-family: monospace;
+                border-spacing: 0;
+            }
+
+            .map td {
+                height: 15px;
+                width: 15px;
+                cursor: pointer;
+                color: black;
+                background-color: green;
+            }
+
+            .container {
+                display: flex;
+                flex-flow: row wrap;
+            }
+
+            .container>* {
+                flex: 1 0;
+            }
+
+            fieldset {
+                display: flex;
+                flex-flow: row wrap;
+            }
+
+            fieldset>* {
+                padding: 1em;
+            }
+
+            fieldset>table {
+                width: 100%;
+            }
+        </style>
+        <h1 class="name"></h1>
+        <div class="container">
+            <fieldset>
+                <legend>
+                    <h2>Map</h2>
+                </legend>
+                <table class="map">
+                    <tbody></tbody>
+                </table>
+
+                <table>
+                    <caption>Stationwide</caption>
+                    <tbody>
+                        <tr>
+                            <td>Station Storage</td>
+                            <td>13/142</td>
+                        </tr>
+                        <tr>
+                            <td>Population</td>
+                            <td>2483</td>
+                        </tr>
+                        <tr>
+                            <td>Growth</td>
+                            <td>2.1%</td>
+                        </tr>
+                        <tr>
+                            <td>Consumption Rating</td>
+                            <td>64</td>
+                        </tr>
+                        <tr>
+                            <td>Education</td>
+                            <td>46%</td>
+                        </tr>
+                        <tr>
+                            <td>Health</td>
+                            <td>64%</td>
+                        </tr>
+                        <tr>
+                            <td>Development</td>
+                            <td>54%</td>
+                        </tr>
+                        <tr>
+                            <td>Avg. Infrastructure</td>
+                            <td>74%</td>
+                        </tr>
+                        <tr>
+                            <td>Energy Consumption</td>
+                            <td>74%</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <select>
+                    <option value="builld">Build</option>
+                </select>
+                <select>
+                    <option value="factory">Factory</option>
+                    <option value="house">House</option>
+                </select>
+                Cost: $10000
+            </fieldset>
+
+            <fieldset>
+                <legend>
+                    <h2>Market</h2>
+                </legend>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Commodity</th>
+                            <th>Demand</th>
+                            <th>Supply</th>
+                            <th>Min. Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Food</td>
+                            <td>56</td>
+                            <td>76</td>
+                            <td><input type="number" min="0" step="10"></td>
+                        </tr>
+                        <tr>
+                            <td>Metal</td>
+                            <td>79</td>
+                            <td>42</td>
+                            <td><input type="number" min="0" step="10"></td>
+                        </tr>
+                        <tr>
+                            <td>Gem</td>
+                            <td>23</td>
+                            <td>75</td>
+                            <td><input type="number" min="0" step="10"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </fieldset>
+
+            <fieldset>
+                <legend>
+                    <h2>Administration</h2>
+                </legend>
+
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>Onwer</td>
+                            <td>Corp 1</td>
+                        </tr>
+                        <tr>
+                            <td>Has Trading Rights</td>
+                            <td>Yes</td>
+                        </tr>
+                        <tr>
+                            <td>Infrastructure Projects ($10000)</td>
+                            <td><button>Fund</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </fieldset>
+        </div>
+    </template>
+
+    <template id="switchView">
+        <style>
+            .main {
+                display: grid;
+                grid-template-rows: 2em;
+                width: 100%;
+                height: 100%;
+            }
+
+            .tabs {
+                grid-row: 1;
+                display: flex;
+                flex-flow: row;
+                background-color: rgba(50, 50, 50);
+                white-space: pre;
+            }
+
+            .tabs>div {
+                padding: 5px;
+                text-align: center;
+                vertical-align: middle;
+                color: lightgray;
+                cursor: pointer;
+            }
+
+            .tabs>div:hover,
+            .tabs>div.selected {
+                background-color: darkgray;
+                color: black;
+            }
+
+            .container {
+                grid-row: 2;
+                overflow-x: hidden;
+                background-color: black;
+                color: gray;
+            }
+
+            .map {
+                width: 100%;
+                height: 100%;
+                float: left;
+            }
+        </style>
+        <div class="main">
+            <div class="tabs"></div>
+            <div class="container"></div>
+        </div>
+    </template>
+
+    <template id="corpView">
+        <div class="name"></div>
+    </template>
+
+    <template id="searchView">
+        <style>
+            .searchContainer {
+                grid-column: 1;
+                display: grid;
+                grid-template-rows: 2em;
+                height: 100%;
+            }
+
+            .result {
+                display: flex;
+                flex-wrap: wrap;
+            }
+
+            .resultItem {
+                cursor: pointer;
+                width: 15em;
+                height: fit-content;
+            }
+
+            .resultItem:hover {
+                background-color: darkgray;
+                color: black;
+            }
+        </style>
+        <div class="searchContainer">
+            <input class="searchTerm" placeholder="🔍&#xFE0E; type here to search">
+            <div class="result"></div>
+        </div>
+    </template>
+
+    <template id="resultItem">
+        <div class="resultItem">
+            <div class="name"></div>
+        </div>
+    </template>
+
+    <template id="playerView">
+        <style>
+            .playerView {
+                margin: 1em;
+                color: gray;
+            }
+
+            .flex-container {
+                display: flex;
+                flex-flow: row wrap;
+            }
+
+            .flex-container>* {
+                padding: 0.5em;
+                margin: 0.5em;
+                border: 1px solid gray;
+                flex: 1 0;
+            }
+
+            table {
+                width: 100%
+            }
+        </style>
+        <div class="playerView">
+
+            <h1>John</h1>
+
+            <h2>Action</h2>
+            <div class="personal flex-container">
+                <table>
+                    <tr>
+                        <td>Conduct piracy</td>
+                        <td><input type="checkbox"></td>
+                    </tr>
+                    <tr>
+                        <td>Auto-invest in stocks</td>
+                        <td><input type="checkbox"></td>
+                    </tr>
+                </table>
+            </div>
+
+            <h2>Info</h2>
+            <div class="personal flex-container">
+                <fieldset>
+                    <legend>Basic Info</legend>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>Place of Birth</td>
+                                <td>Planet 3</td>
+                            </tr>
+                            <tr>
+                                <td>Currently At</td>
+                                <td>Smallville, Planet 1</td>
+                            </tr>
+                            <tr>
+                                <td>Stress</td>
+                                <td>53/124</td>
+                            </tr>
+                            <tr>
+                                <td>Health</td>
+                                <td>1468</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Personal Focus</legend>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>✓</td>
+                                <td><a href="#">Work</a></td>
+                                <td>boost production based on expertise</td>
+                            </tr>
+                            <tr>
+                                <td></td>
+                                <td><a href="#">Politics</a></td>
+                                <td>gain political power faster</td>
+                            </tr>
+                            <tr>
+                                <td></td>
+                                <td><a href="#">Rest</a></td>
+                                <td>reduce stress</td>
+                            </tr>
+                            <tr>
+                                <td></td>
+                                <td><a href="#">Walk</a></td>
+                                <td>random events happen more often</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Traits</legend>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>Genius</td>
+                                <td>provide bonus in earning points</td>
+                                <td>✓</td>
+                            </tr>
+                            <tr>
+                                <td>Natural Sickness</td>
+                                <td>lower health quicker</td>
+                                <td>✓</td>
+                            </tr>
+                            <tr>
+                                <td>Hardworking</td>
+                                <td>increase working effectiveness</td>
+                                <td>✓</td>
+                            </tr>
+                            <tr>
+                                <td>Corrupted</td>
+                                <td>increase bribery effectiveness</td>
+                                <td>14%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Expertise</legend>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>Food</td>
+                                <td>64</td>
+                            </tr>
+                            <tr>
+                                <td>Metal</td>
+                                <td>72</td>
+                            </tr>
+                            <tr>
+                                <td>Gem</td>
+                                <td>75</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+            </div>
+
+            <h2>Influence</h2>
+            <div class="influence flex-container">
+                <fieldset>
+                    <legend>Political</legend>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>Space Poland</td>
+                                <td>
+                                    <table>
+                                        <tbody>
+                                            <tr>
+                                                <td>Liberal</td>
+                                                <td>59</td>
+                                                <td><a href="#">🔗&#xFE0E;</a></td>
+                                            </tr>
+                                            <tr>
+                                                <td>Conservative</td>
+                                                <td>29</td>
+                                                <td><a href="#">🔗&#xFE0E;</a></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Space France</td>
+                                <td>
+                                    <table>
+                                        <tbody>
+                                            <tr>
+                                                <td>Liberal</td>
+                                                <td>13</td>
+                                                <td><a href="#">🔗&#xFE0E;</a></td>
+                                            </tr>
+                                            <tr>
+                                                <td>Conservative</td>
+                                                <td>89</td>
+                                                <td><a href="#">🔗&#xFE0E;</a></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Corporate</legend>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>#Shares</th>
+                                <th>Control</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Corp1</td>
+                                <td>4000</td>
+                                <td>62%</td>
+                                <td><a href="#">🔗&#xFE0E;</a></td>
+                            </tr>
+                            <tr>
+                                <td>Corp2</td>
+                                <td>310</td>
+                                <td>12%</td>
+                                <td><a href="#">🔗&#xFE0E;</a></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+            </div>
+
+        </div>
+    </template>
+
+    <template id="peopleView">
+        <style>
+            .container {
+                display: grid;
+                grid-template-columns: 10em;
+                height: 100%;
+            }
+
+            .list {
+                grid-row: 1;
+                overflow: auto;
+                border-right: 1px solid;
+                padding: 2px;
+            }
+
+            .contentContainer {
+                grid-row: 1;
+                padding: 2px;
+            }
+
+            .content {
+                display: flex;
+                flex-flow: row wrap;
+            }
+        </style>
+
+        <div class="container">
+            <div class="list">
+                <div>Tim</div>
+                <div>Tom</div>
+                <div>Tum</div>
+            </div>
+            <div class="contentContainer">
+                <h1>Name</h1>
+
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>Place of Birth</td>
+                            <td>Planet 3</td>
+                        </tr>
+                        <tr>
+                            <td>Currently At</td>
+                            <td>Smallville, Planet 1</td>
+                        </tr>
+                        <tr>
+                            <td>Stress</td>
+                            <td>53/124</td>
+                        </tr>
+                        <tr>
+                            <td>Health</td>
+                            <td>1468</td>
+                        </tr>
+                        <tr>
+                            <td>Relation to you</td>
+                            <td>0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </template>
+    <script src="./bundle.js"></script>
