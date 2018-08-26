@@ -1,12 +1,16 @@
 import { createGame } from "./createGame";
-import { Database, IData } from "./database";
+import { Database } from "./database";
+import { Galaxy } from "./galaxy";
 import { FactionKind } from "./model/def";
 import { SwitchView } from "./view/SwitchView";
+
+const g = Galaxy.new();
+g.print_planets();
 
 const root = document.body;
 console.assert(root !== null);
 
-function makeInitialState(): IData {
+function makeInitialState() {
 
     const galaxy = createGame();
 

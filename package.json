@@ -7,15 +7,23 @@
         "build": "webpack --mode=production",
         "watch": "webpack --watch --mode=development",
         "type-check": "tsc --noEmit --watch",
+        "serve": "webpack-dev-server",
+        "build-debug": "cargo build --target wasm32-unknown-unknown && wasm-bindgen target/wasm32-unknown-unknown/debug/galaxy.wasm --out-dir ./src",
+        "build-release": "cargo build --release --target wasm32-unknown-unknown && wasm-bindgen target/wasm32-unknown-unknown/release/galaxy.wasm --out-dir ./src",
+        "debug": "npm run build-debug && webpack --mode=development",
+        "bundle": "npm run build-release && webpack --mode=production",
+        "aaa": "webpack --mode=development",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "author": "Alfred Chan (alfred8844@gmail.com)",
     "devDependencies": {
         "@types/hammerjs": "^2.0.35",
+        "copy-webpack-plugin": "^4.5.2",
         "ts-loader": "^4.5.0",
         "typescript": "^3.0.1",
         "webpack": "^4.17.1",
-        "webpack-cli": "^3.1.0"
+        "webpack-cli": "^3.1.0",
+        "webpack-dev-server": "^3.1.5"
     },
     "dependencies": {
         "hammerjs": "^2.0.8",

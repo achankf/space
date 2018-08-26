@@ -1,0 +1,11 @@
+[package]
+name = "galaxy"
+version = "0.1.0"
+authors = ["Alfred Chan <alfred8844@gmail.com>"]
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/model/lib.rs"
+  
+[dependencies]
+wasm-bindgen = "0.2.17"
