@@ -295,17 +295,9 @@
     <template id="planetView">
         <style>
             .map {
-                border-collapse: collapse;
-                font-family: monospace;
-                border-spacing: 0;
-            }
-
-            .map td {
-                height: 15px;
-                width: 15px;
-                cursor: pointer;
-                color: black;
-                background-color: green;
+                margin: 0;
+                padding: 0;
+                background-color: rgb(111, 160, 111);
             }
 
             .container {
@@ -336,9 +328,7 @@
                 <legend>
                     <h2>Map</h2>
                 </legend>
-                <table class="map">
-                    <tbody></tbody>
-                </table>
+                <canvas class="map"></canvas>
                 <table>
                     <tr>
                         <td>Coor</td>
