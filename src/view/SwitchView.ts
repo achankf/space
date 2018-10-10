@@ -97,6 +97,8 @@ export class SwitchView
 
     public updateTabs() {
 
+        const db = this.db;
+
         clearChildren(this.tabs);
         const oldTabChildren = this.tabChildren;
         this.tabChildren = new Map();
@@ -116,9 +118,8 @@ export class SwitchView
                         break;
                     case TabKind.Planet:
                         {
-                            const planet = this.db.galaxy.planets.get(data.planetId)!;
-                            console.assert(planet !== undefined);
-                            tab.textContent = planet.name;
+                            const planetName = db.getPlanetName(data.planetId);
+                            tab.textContent = planetName;
                         }
                         break;
                     case TabKind.Search:
@@ -191,7 +192,7 @@ export class SwitchView
 
                     this.switchHelper({
                         ...data,
-                        view: new PlanetView(db, data.planetId),
+                        view: new PlanetView(db, data.planetId.Planet),
                     });
                     break;
                 case TabKind.Search:

@@ -1,7 +1,4 @@
 
-// from the Rust game-of-life example
-
-const index = import("./index.js");
-index.then(() => {
+import("./index.js").then(() => {
     console.log("Loaded...");
 });

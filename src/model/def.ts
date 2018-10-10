@@ -1,136 +1,113 @@
-import { BiMap, Vec2D } from "myalgo-ts";
+import { get_ticks_per_second, Product } from "../../galaxy";
 
-export interface IZone {
+// types for interop with rust wasm, all readonly and actual data must be generated on the Rust side
 
-    housing: number;
-    pop: number; // max pop determined by zone kind
-
-    industryPts: Map<symbol, number>; // faction id -> value
-
-    // factors that affect development
-    eduLvl: number; // education level
-    healthLvl: number; // health level
-    happyLvl: number; // happiness level
-    safetyLvl: number; // safety level
-    infrLvl: number; // infrastructure level
-    energyLvl: number; // infrastructure level
+export interface IPlanetId {
+    readonly Planet: number;
 }
 
-export interface IPeople {
-    name: string;
-    job?: Job;
+export interface IStarId {
+    readonly Star: number;
 }
 
-export interface IStorage {
-    storage: number[]; // Product enum as index
-    minKeep: number[]; // Product enum as index
+export interface INationId {
+    readonly Nation: number;
 }
 
-export interface IGalaxy {
-    account: Map<symbol, number>; // (faction|zone|personal) -> balance
-    cachedLocIdx: Map<number, Set<symbol>>;
-    colonyGovs: Map<symbol, IColony>; // id -> colony
-    planetColonyMap: BiMap<symbol, symbol>; // planet <-> colony
-    corps: Map<symbol, ICorporation>;
-    locs: Map<symbol, Vec2D>; // any object that is located in the galaxy -> coordinates
-    nations: Map<symbol, INational>;
-    orbitAngles: Map<symbol, number>; // angle of the satellite (assuming circular), in radian
-    people: Map<symbol, IPeople>;
-    planets: Map<symbol, IPlanet>;
-    stars: Map<symbol, IStar>;
-    stock: Map<symbol, Map<symbol, number>>; // corp id -> person/faction id -> number shares
-    storages: Map<symbol, number[]>; // colony id -> Product enum index -> qty
-    tick: number;
-    zones: Map<symbol, IZone>;
+export interface ICorporationId {
+    readonly Corporation: number;
 }
 
-export enum FactionKind {
-    Corporate,
-    Colonial,
-    National,
-    // TODO Pirate,
+export interface ISpecialist {
+    readonly Specialist: number;
 }
 
-export interface ICorporation {
-    kind: FactionKind.Corporate;
-    issuedShare: number;
-    name: string;
-    opRights: Set<symbol>; // operating rights: local governments ids
+export interface IColonyId {
+    readonly Colony: {
+        readonly planet_idx: number;
+        readonly colony_idx: number;
+    };
 }
 
-export const enum NationalPolicy {
+export type Id =
+    Partial<
+    IPlanetId &
+    IStarId &
+    INationId &
+    ICorporationId &
+    ISpecialist
+    >;
+
+export interface IPlanetInfo {
+    readonly name: string;
+    readonly width: number;
+    readonly height: number;
 }
 
-export const enum ColonialPolicy {
+export type Locatable = IPlanetId & IStarId;
+
+export interface ISearchResult {
+    readonly id: Locatable;
+    readonly name: string;
 }
 
-export interface INational { // government
-    kind: FactionKind.National;
-    colGov: Set<symbol>;
-    name: string;
-    policies: Set<NationalPolicy>; // TODO use a bit set
-    taxRate: number;
+export interface INameSearchResult {
+    readonly id: Id;
+    readonly name: string;
 }
 
-export interface IColony { // government
-    kind: FactionKind.Colonial;
-    allegiance: symbol; // nation id
-    policies: Set<ColonialPolicy>; // TODO use a bit set
-    taxRate: number;
-    locatedSrc: symbol; // planet id or station id
-    zones: Set<symbol>;
+const TICKS_PER_SECOND = get_ticks_per_second();
+export const TICK_PERIOD = 1000 / TICKS_PER_SECOND; // in milliseconds, used in setInterval()
+console.log(TICK_PERIOD);
+
+const productValues = Object
+    .keys(Product)
+    .filter((k) => typeof Product[k as any] === "number")
+    .map((k) => Number(Product[k as any]) as Product)
+    .sort((a, b) => a - b);
+
+export function allProducts() {
+    return productValues.slice();
 }
 
-export const enum MassKind {
-    Star,
-    Planet,
-    Station,
-    Spaceport,
+export function getProductName(product: Product) {
+    switch (product) {
+        case Product.Accessory: return "Accessory";
+        case Product.Apparel: return "Apparel";
+        case Product.Crop: return "Crop";
+        case Product.Metal: return "Metal";
+        case Product.Concrete: return "Concrete";
+        case Product.Supply: return "Supply";
+        case Product.Alloy: return "Alloy";
+        case Product.Gem: return "Gem";
+        case Product.Fuel: return "Fuel";
+        case Product.Fiber: return "Fiber";
+        case Product.Chemical: return "Chemical";
+        case Product.Circuit: return "Circuit";
+        case Product.Computer: return "Computer";
+        case Product.Food: return "Food";
+        case Product.Medicine: return "Medicine";
+        case Product.Furniture: return "Furniture";
+        case Product.Vehicle: return "Vehicle";
+        case Product.Machine: return "Machine";
+        case Product.Tool: return "Tool";
+        case Product.Hull: return "Hull";
+        case Product.Engine: return "Engine";
+        case Product.Weapon: return "Weapon";
+        case Product.Shield: return "Shield";
+        case Product.Armor: return "Armor";
+        case Product.Countermeasure: return "Countermeasure";
+        case Product.Rifle: return "Rifle";
+        case Product.Uniform: return "Uniform";
+        case Product.Saber: return "Saber";
+        case Product.Exoskeleton: return "Exoskeleton";
+        default:
+            throw new Error("not handled");
+    }
 }
 
-export interface IOrbital {
-    orbitDist: number;
-    center: symbol;
+try {
+    allProducts().map((x) => getProductName(x));
+} catch (e) {
+    console.assert(false, "sanity check failed");
 }
-
-export interface IStar {
-    name: string;
-    massKind: MassKind.Star;
-    radius: number;
-    orbitDist: number;
-}
-
-export interface IStation extends IOrbital {
-    name: string;
-    massKind: MassKind.Station;
-    height: number;
-    width: number;
-    radius: number;
-    owner: symbol;
-    storage: symbol;
-}
-
-export interface IPlanet extends IOrbital {
-    name: string;
-    massKind: MassKind.Planet;
-    radius: number;
-    height: number;
-    width: number;
-    zones: symbol[];
-    marketingBudget: Map<symbol, number>;
-    donationBudget: Map<symbol, number>;
-    industryDistribution: Map<symbol, number[]>; // faction id -> product -> distribution of industrial capacity in [0,1]
-    industryPts: Map<symbol, number[]>;
-}
-
-export enum Job {
-    CEO,
-    HeadOfColony,
-    HeadOfPlanet,
-    HeadOfState,
-    FieldMarshall,
-    General,
-    Worker,
-}
-
-export const Hash2DFactor = 20;

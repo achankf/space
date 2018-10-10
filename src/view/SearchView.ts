@@ -1,4 +1,5 @@
-import { ChannelKind, Database, ISubscriber, SearchKind } from "../database";
+import { ChannelKind, Database, ISubscriber } from "../database";
+import { IPlanetId } from "../model/def";
 import { clearChildren } from "./helper";
 
 const TEMPLATE = document.getElementById("searchView") as HTMLTemplateElement;
@@ -43,10 +44,9 @@ export class SearchView
         clearChildren(this.searchResult);
 
         const db = this.db;
-        const galaxy = db.galaxy;
         const fragment = document.createDocumentFragment();
 
-        for (const [id, nameKind] of db.searchNameResult) {
+        for (const result of db.searchNameResult) {
 
             const inner = document.createDocumentFragment();
             inner.appendChild(RESULT_ITEM.content.cloneNode(true));
@@ -57,58 +57,20 @@ export class SearchView
             const nameField = inner.querySelector(".name") as
                 HTMLDivElement;
             console.assert(nameField !== null);
+            nameField.textContent = result.name;
 
-            switch (nameKind) {
-                case SearchKind.Planet:
-                    {
-                        const planet = galaxy.planets.get(id);
-                        if (planet === undefined) {
-                            continue;
-                        }
-                        resultItem.onclick = () => {
-                            db.switchPlanetTab(id);
-                        };
-
-                        nameField.textContent = planet.name;
-                    }
-                    break;
-                case SearchKind.Star:
-                    {
-                        const star = galaxy.stars.get(id);
-                        if (star === undefined) {
-                            continue;
-                        }
-
-                        nameField.textContent = star.name;
-                    }
-                    break;
-                case SearchKind.Nation:
-                    {
-                        const nation = galaxy.nations.get(id);
-                        if (nation === undefined) {
-                            continue;
-                        }
-
-                        nameField.textContent = nation.name;
-                    }
-                    break;
-                case SearchKind.Colony:
-                    {
-                        const colony = galaxy.colonyGovs.get(id);
-                        if (colony === undefined) {
-                            continue;
-                        }
-                        const locatedSrc = colony.locatedSrc;
-                        const planet = galaxy.planets.get(locatedSrc)!;
-                        console.assert(planet !== undefined);
-                        resultItem.onclick = () => {
-                            db.switchPlanetTab(locatedSrc);
-                        };
-                        nameField.textContent = `Colony, ${planet.name}`;
-                    }
-                    break;
-                default:
-                    throw new Error("not handled");
+            const id = result.id;
+            if (id.Planet !== undefined) {
+                const planetId = id as IPlanetId;
+                resultItem.onclick = () => db.switchPlanetTab(planetId);
+            } else if (id.Star !== undefined) {
+                // TODO
+            } else if (id.Nation !== undefined) {
+                // TODO
+            } else if (id.Corporation !== undefined) {
+                // TODO
+            } else {
+                throw new Error("not handled");
             }
             fragment.appendChild(inner);
         }
@@ -118,7 +80,6 @@ export class SearchView
     private handleKeyup = () => {
         const db = this.db;
         const term = this.searchTerm.value;
-        console.log(term);
         db.searchName = term;
     }
 }

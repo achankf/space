@@ -1,12 +1,12 @@
-import { Dictionary, distance, makePair, makeSet, Trie, unionMut, Vec2D, wrapIt } from "myalgo-ts";
-import { performActions } from "./model/action";
-import { IGalaxy } from "./model/def";
-import { calCoorHash, calNextState, calTrue2DHash, getMass } from "./model/galaxy";
+import { unionMut, Vec2D } from "myalgo-ts";
+import { Galaxy } from "../galaxy";
+import { memory } from "../galaxy_bg";
+import { INameSearchResult, IPlanetId, ISearchResult } from "./model/def";
 import { MIN_GRID_SIZE, TabData, TabKind } from "./view/def";
+import { IDrawGalaxyData } from "./view/def2";
 
 export interface IData {
-    galaxy: IGalaxy;
-    player: symbol;
+    galaxy: Galaxy;
 }
 
 export const enum ChannelKind {
@@ -27,7 +27,7 @@ const channelKindValues = [
     ChannelKind.NameSearchUpdate,
 ];
 
-export interface IGalaxyViewData {
+export interface IViewData {
     center: Vec2D;
     gridSize: number;
 }
@@ -69,22 +69,19 @@ const DEFAULT_TABS: TabData[] = [
 export class Database {
 
     // somewhat-persistent temp data; handled by external views
-    public readonly galaxyViewData: IGalaxyViewData = {
+    public readonly galaxyViewData: IViewData = {
         center: [0, 0],
         gridSize: MIN_GRID_SIZE,
     };
 
     public curTabId!: symbol;
+    public galaxy!: Galaxy;
 
-    private galaxyState!: IGalaxy;
     private tabState!: TabData[];
-    private cacheSearchResult: Array<[symbol, SearchKind]> = [];
+    private cacheSearchResult: INameSearchResult[] = [];
     private readonly subscribers = new Set<ISubscriber>();
     private readonly flags = new Set<ChannelKind>();
-    private playerId1!: symbol;
     private searchNameId?: number;
-
-    private dictionary = new Dictionary<symbol, SearchKind>();
 
     constructor(base: IData) {
         this.reset(base);
@@ -92,8 +89,7 @@ export class Database {
 
     public reset(d: IData) {
 
-        this.galaxyState = d.galaxy;
-        this.playerId1 = d.player;
+        this.galaxy = d.galaxy;
 
         const tabs = DEFAULT_TABS.slice();
 
@@ -102,35 +98,15 @@ export class Database {
 
         this.setTabsHelper(tabs);
 
-        this.buildDict();
         this.cacheSearchResult = [];
 
         this.notify(...channelKindValues);
     }
 
-    public buildDict() {
-        const galaxy = this.galaxyState;
-        [
-            makePair(SearchKind.Planet, galaxy.planets),
-            makePair(SearchKind.Star, galaxy.stars),
-            makePair(SearchKind.Nation, galaxy.nations),
-        ]
-            .forEach(([nameKind, dataMap]) => {
-                for (const [id, data] of dataMap) {
-                    this.dictionary.set(data.name, id, nameKind);
-                }
-            });
-
-        const colonies = new Map(Array
-            .from(galaxy.colonyGovs.keys())
-            .map((x) => makePair(x, SearchKind.Colony)));
-        this.dictionary.batchSet("colony", colonies);
-    }
-
     public set searchName(name: string) {
         clearInterval(this.searchNameId);
         this.searchNameId = setInterval(() => {
-            this.cacheSearchResult = Array.from(this.dictionary.search(name));
+            this.cacheSearchResult = this.galaxy.interop_search_name(name);
             this.notify(ChannelKind.NameSearchUpdate);
             clearInterval(this.searchNameId);
         }, 300);
@@ -149,30 +125,97 @@ export class Database {
         this.notify();
     }
 
-    public set galaxy(g: IGalaxy) {
-        console.assert(g !== null && g !== undefined);
-        this.galaxyState = g;
-        this.notify(ChannelKind.Galaxy);
+    public calDrawData(tlX: number, tlY: number, brX: number, brY: number, gridSize: number): IDrawGalaxyData {
+        return this.galaxy.interop_cal_draw_data(tlX, tlY, brX, brY, gridSize);
     }
 
-    public get galaxy() {
-        return this.galaxyState;
+    public getPlanetName(planetId: IPlanetId): string {
+        return this.galaxy.get_planet_name(planetId.Planet);
     }
 
-    public get playerId() {
-        return this.playerId1;
+    /*
+    public getPlanetInfo(planetId: IPlanetId): IPlanetInfo {
+        return this.galaxy.interop_get_planet_info(planetId);
+    }
+    */
+
+    /*
+    public calColonyCivilianDemands(colonyId: IColonyId): Uint32Array {
+        return this.galaxy.interop_cal_civilian_demands(colonyId);
+    }
+
+    public calSupply(colonyId: IColonyId): Uint32Array {
+        return this.galaxy.interop_cal_supply(colonyId);
+    }
+
+    public calColonyCorpDemands(colonyId: IColonyId): Uint32Array {
+        return this.galaxy.interop_cal_corporate_demands(colonyId);
+    }
+    */
+
+    /*
+    public createPlayer(name: string, job: Job): ISpecialist {
+        return this.galaxy.interop_create_player(name, job);
+    }
+    */
+
+    public handleCoorSearch(x: number, y: number) {
+        const galaxy2 = this.galaxy;
+        const results: ISearchResult[] = galaxy2.interop_search(x, y);
+
+        const unwrapped = results.map((result): INameSearchResult => {
+            const id = result.id;
+            return { id, name: result.name };
+        });
+
+        switch (unwrapped.length) {
+            case 0:
+                break;
+            case 1:
+                const result = results[0];
+                const id = result.id;
+                if (id !== undefined) {
+                    if (id.Planet !== undefined) {
+                        const planetId = id as IPlanetId;
+                        this.switchPlanetTab(planetId);
+                    } else if (id.Star !== undefined) {
+                        console.log(unwrapped);
+                        // TODO ignore for now
+                    } else {
+                        throw new Error("not handled");
+                    }
+                }
+                break;
+            default:
+                this.cacheSearchResult = unwrapped;
+                console.assert(false); // TODO switch to the search panel
+                break;
+        }
     }
 
     public get tabs() {
         return this.tabState.slice();
     }
 
-    public addPlanetTab(planetId: symbol) {
+    public getPlanetEdges(planetId: number) {
+        return this.galaxy.get_planet_edges(planetId);
+    }
+
+    public getPlanetPoints(planetId: number) {
+        const ptr = this.galaxy.get_planet_points(planetId);
+        const dim = this.galaxy.cal_planet_dim(planetId);
+        const memorySize = 2 * dim;
+        const ret = new Float32Array(memory.buffer, ptr, memorySize);
+        console.assert(ret.length > 0);
+        return ret;
+    }
+
+    public addPlanetTab(planetId: IPlanetId) {
         const tabs = this.tabState;
         // perform linear search; add a new tab if the planet isn't listed in the tabs already
         const tab = tabs.find((x) =>
             x.kind === TabKind.Planet &&
-            x.planetId === planetId);
+            x.planetId.Planet === planetId.Planet);
         if (tab !== undefined) {
             return tab.tabId;
         }
@@ -187,7 +230,8 @@ export class Database {
         return tabId;
     }
 
-    public switchPlanetTab(planetId: symbol) {
+    public switchPlanetTab(planetId: IPlanetId) {
+        console.log("switching view to planet id:", planetId);
         const tabId = this.addPlanetTab(planetId);
         this.switchTabHelper(tabId);
         this.notify();
@@ -223,43 +267,13 @@ export class Database {
     public get data() {
         const ret: IData = {
             galaxy: this.galaxy,
-            player: this.playerId,
         };
         return ret;
     }
 
     public tick() {
-        this.galaxy = calNextState(this.galaxy);
-    }
-
-    public search(coor: Vec2D) {
-        const db = this;
-        const [x, y] = coor;
-        const galaxy = db.galaxy;
-        const locIdx = galaxy.cachedLocIdx;
-
-        const coorFloored: Vec2D = [Math.floor(x), Math.floor(y)];
-        const candidates = [coorFloored, ...neighbours(coorFloored)];
-        console.assert(locIdx.size > 0);
-        return makeSet(wrapIt(candidates)
-            .map(([cx, cy]) => locIdx.get(calTrue2DHash(cx, cy))!) // turn hash to ids
-            .filter((set) => set !== undefined)
-            .flatMap((set) => set))
-            .map((objId) => makePair(objId, getMass(galaxy, objId)))
-            .filter(([objId, data]) => { // take objs that are in range
-                const objLoc = galaxy.locs.get(objId)!;
-                console.assert(objLoc !== undefined);
-                return distance(objLoc, coor) <= data.radius;
-            });
-    }
-
-    public runAi() {
-        const galaxy = this.galaxyState;
-        for (const [id, data] of galaxy.people) {
-            if (id !== this.playerId) {
-                performActions(this.galaxyState, id, data);
-            }
-        }
+        this.galaxy = this.galaxy.cal_next_state();
+        this.notify(ChannelKind.Galaxy);
     }
 
     public addFlags(...flags: ChannelKind[]) {
@@ -310,81 +324,3 @@ export class Database {
         }
     }
 }
-
-function neighbours([x, y]: Vec2D) {
-    const ret: Vec2D[] = [
-        [x, y - 1], // top
-        [x, y + 1], // bottom
-        [x - 1, y], // left
-        [x + 1, y], // right,
-        [x - 1, y - 1], // top-left
-        [x + 1, y - 1], // top-right
-        [x - 1, y + 1], // bottom-left
-        [x + 1, y + 1], // bottom-right
-    ];
-    return ret;
-}
-
-function calLocIdx(galaxy: IGalaxy) {
-
-    const ret = new Trie<Vec2D, Set<symbol>>();
-
-    for (const [id, coor] of galaxy.locs) {
-        const hash = calCoorHash(coor);
-        const set = ret.getOrSet(hash, () => new Set());
-        set.add(id);
-    }
-
-    return ret;
-}
-
-/*
-        const galaxy = db.galaxy;
-        const planet = getPlanet(galaxy, planetId);
-
-        for (const [tileIdx, colonyId] of planet.polOwner) {
-            const zoneId = planet.zones[tileIdx];
-            const zone = galaxy.zones.get(zoneId)!;
-            console.assert(zone !== undefined);
-            const pop = zone.pop;
-
-            const money = galaxy.account.get(zoneId) || 0;
-
-            const demand = pop;
-
-            for (const product of [
-                Product.Food,
-                Product.Drink,
-                Product.Apparel,
-                Product.Medicine,
-            ]) {
-                //
-            }
-        }
-*/
-
-/*
-export function tryBuyZoneShare(galaxy: IGalaxy, zoneId: symbol, factionId: symbol, qty: number) {
-    const zone = getZone(galaxy, zoneId)!;
-    const shares = galaxy.zoneShare.get(zoneId);
-    const sold = shares === undefined ? 0 : sum(...shares.values());
-    const remain = zone.issuedShares - sold;
-    console.assert(remain >= 0);
-
-    const colony = getColony(galaxy, zone.colony);
-    console.assert(galaxy.nations.has(colony.allegiance));
-
-    const qtyToBuy = Math.min(remain, qty);
-
-    const price = qtyToBuy;
-
-    let nationalBank = galaxy.account.get(colony.allegiance);
-    if (nationalBank === undefined) {
-        nationalBank = new Map<symbol, number>();
-        galaxy.account.set(colony.allegiance, nationalBank);
-    }
-
-    const balance = nationalBank.get(factionId) || 0;
-    nationalBank.set(factionId, balance - price);
-}
-*/

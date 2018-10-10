@@ -1,11 +1,28 @@
 [package]
-name = "galaxy"
+name = "Space"
 version = "0.1.0"
 authors = ["Alfred Chan <alfred8844@gmail.com>"]
 
 [lib]
+name="galaxy"
 crate-type = ["cdylib"]
-path = "src/model/lib.rs"
+path = "src/model/lib.rs" 
+
+[profile.release]
+debug = true
   
 [dependencies]
-wasm-bindgen = "0.2.17"
+serde = "^1.0.59"
+serde_derive = "^1.0.59"
+strsim = "0.8.0"
+wbg-rand = "0.4"
+enum-map = "0.4.1"
+console_error_panic_hook = "0.1.4"
+ordered-float = "1.0.1"
+delaunator = "0.2.0"
+nalgebra = "0.16.4" 
+rand = "0.5.5"
+
+[dependencies.wasm-bindgen]
+version = "0.2.24"
+features = ["serde-serialize"]

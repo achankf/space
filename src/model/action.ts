@@ -1,5 +1,3 @@
-import { IGalaxy, IPeople, Job } from "./def";
-
 /*
     when a person dies
         - a family member (randomly generated) takes over, and have to pay inheritance tax
@@ -57,66 +55,66 @@ import { IGalaxy, IPeople, Job } from "./def";
     // TODO pirates
 */
 
+/*
 export function performActions(galaxy: IGalaxy, personId: symbol, personData: Readonly<IPeople>) {
-    /*
 
-    if poor {
-        find a job if available
+if poor {
+    find a job if available
 
-        if job is good {
-            invest in stocks
-        } otherwise {
-            find another job
-            look for sponsors and become a pirate
-        }
-    } else if middle class {
-        if not in politics {
-            start a business or become a trader
-            expand business
-        } otherwise { // lucky to find such job and advanced
-            expand political influence
-            invest more into stocks
-        }
-    } otherwise rich {
-        delegate business to others
+    if job is good {
+        invest in stocks
+    } otherwise {
+        find another job
+        look for sponsors and become a pirate
+    }
+} else if middle class {
+    if not in politics {
+        start a business or become a trader
+        expand business
+    } otherwise { // lucky to find such job and advanced
         expand political influence
+        invest more into stocks
     }
-
-    if is a major stock holder (>5%) {
-        check relation with CEO, try to replace him/her low relation
-        try to maximize dividend
-    }
-
-    - invest in stock markets
-    - can start a business, if rich enough
-    - controls one private fleet (at least 1 ship), can hire others
-    - can trade, hunt pirates; without the shooter elements of typical space sims
-as top stock holders (> 5%)
-    - set up and vote for issues
-        - a new CEO, and his/her pay
-        - dividends (quarterly)
-        */
-
-    // travel if necessary
-
-    // start a business
-
-    switch (personData.job) {
-        case Job.CEO:
-            break;
-        case Job.FieldMarshall:
-            break;
-        case Job.General:
-            break;
-        case Job.HeadOfColony:
-            break;
-        case Job.HeadOfPlanet:
-            break;
-        case Job.HeadOfState:
-            break;
-        case Job.Worker:
-            break;
-        default:
-            throw new Error("not handled");
-    }
+} otherwise rich {
+    delegate business to others
+    expand political influence
 }
+
+if is a major stock holder (>5%) {
+    check relation with CEO, try to replace him/her low relation
+    try to maximize dividend
+}
+
+- invest in stock markets
+- can start a business, if rich enough
+- controls one private fleet (at least 1 ship), can hire others
+- can trade, hunt pirates; without the shooter elements of typical space sims
+as top stock holders (> 5%)
+- set up and vote for issues
+    - a new CEO, and his/her pay
+    - dividends (quarterly)
+
+// travel if necessary
+
+// start a business
+
+switch (personData.job) {
+    case Job.CEO:
+        break;
+    case Job.FieldMarshall:
+        break;
+    case Job.General:
+        break;
+    case Job.HeadOfColony:
+        break;
+    case Job.HeadOfPlanet:
+        break;
+    case Job.HeadOfState:
+        break;
+    case Job.Worker:
+        break;
+    default:
+        throw new Error("not handled");
+}
+}
+*/

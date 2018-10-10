@@ -1,29 +1,28 @@
 {
     "name": "aaaa",
+    "private": true,
     "version": "0.0.0",
     "description": "A",
     "main": "index.js",
+    "repository": "github:achankf/space",
     "scripts": {
-        "build": "webpack --mode=production",
-        "watch": "webpack --watch --mode=development",
-        "type-check": "tsc --noEmit --watch",
+        "predeploy": "npm run bundle",
+        "deploy": "gh-pages -d dist",
         "serve": "webpack-dev-server",
-        "build-debug": "cargo build --target wasm32-unknown-unknown && wasm-bindgen target/wasm32-unknown-unknown/debug/galaxy.wasm --out-dir ./src",
-        "build-release": "cargo build --release --target wasm32-unknown-unknown && wasm-bindgen target/wasm32-unknown-unknown/release/galaxy.wasm --out-dir ./src",
-        "debug": "npm run build-debug && webpack --mode=development",
-        "bundle": "npm run build-release && webpack --mode=production",
-        "aaa": "webpack --mode=development",
+        "wasm": "cargo build --target wasm32-unknown-unknown --release && wasm-bindgen target/wasm32-unknown-unknown/release/galaxy.wasm --out-dir .",
+        "bundle": "npm run wasm && tsc && webpack --mode=production",
+        "tsc": "tsc --watch",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "author": "Alfred Chan (alfred8844@gmail.com)",
     "devDependencies": {
-        "@types/hammerjs": "^2.0.35",
+        "@types/hammerjs": "^2.0.36",
         "copy-webpack-plugin": "^4.5.2",
-        "ts-loader": "^4.5.0",
-        "typescript": "^3.0.1",
-        "webpack": "^4.17.1",
-        "webpack-cli": "^3.1.0",
-        "webpack-dev-server": "^3.1.5"
+        "gh-pages": "^2.0.0",
+        "typescript": "^3.1.1",
+        "webpack": "^4.20.2",
+        "webpack-cli": "^3.1.2",
+        "webpack-dev-server": "^3.1.9"
     },
     "dependencies": {
         "hammerjs": "^2.0.8",

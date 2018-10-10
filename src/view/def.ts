@@ -1,3 +1,4 @@
+import { IPlanetId } from "../model/def";
 
 export const enum StateKind {
     NothingSelected, // initial state
@@ -49,7 +50,7 @@ export interface IBaseTab {
 
 export interface IPlanetTab extends IBaseTab {
     kind: TabKind.Planet;
-    planetId: symbol;
+    planetId: IPlanetId;
 }
 
 export interface IGalaxyTab extends IBaseTab {

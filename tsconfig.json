@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "es6",
     "module": "esnext",
+    "outDir": "build",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -15,11 +16,12 @@
     "noFallthroughCasesInSwitch": true,
     "sourceMap": true,
     "experimentalDecorators": true,
-    "moduleResolution": "node",
-    "baseUrl": ".",
-    "paths": {}
+    "moduleResolution": "node"
   },
   "exclude": [
+    "target",
+    "build",
+    "dist",
     "**/*.test.ts",
     "lib",
     "lib/*.d.ts",

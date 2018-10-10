@@ -1,6 +1,7 @@
-export function setIfDiff(element: Element, strVal: string) {
-    if (element.textContent !== strVal) {
-        element.textContent = strVal;
+export function setIfDiff<T>(element: Element, val: T) {
+    const str = val.toString();
+    if (element.textContent !== str) {
+        element.textContent = str;
     }
 }
 

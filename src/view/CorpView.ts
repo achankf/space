@@ -14,9 +14,11 @@ export class CorpView extends HTMLElement {
         this.nameDiv = shadowRoot.querySelector("name")!;
         console.assert(this.nameDiv !== null);
 
+        /*
         const corp = db.galaxy.corps.get(corpId)!;
         console.assert(corp !== undefined);
         this.nameDiv.textContent = corp.name;
+        */
     }
 }
 
