@@ -3,6 +3,8 @@ import { get_planet_vertex_dist } from "../../galaxy";
 import { IViewData } from "../database";
 import { MAX_GRID_SIZE, MIN_GRID_SIZE } from "./def";
 
+const ZOOM_FACTOR = 1.5;
+
 export class CanvasOperator {
 
     public static readonly planetVertexDist = get_planet_vertex_dist();
@@ -15,13 +17,13 @@ export class CanvasOperator {
         console.assert(Number.isFinite(y));
 
         const viewData = this.viewData;
-        const { center, gridSize } = viewData;
+        const { diffFromOrigin, gridSize } = viewData;
 
         const canvas = this.canvas;
         const width = canvas.width;
         const height = canvas.height;
 
-        const [cx, cy] = center;
+        const [cx, cy] = diffFromOrigin;
         const canvasWidth = width / 2;
         const canvasHeight = height / 2;
 
@@ -36,24 +38,30 @@ export class CanvasOperator {
 
     public toGameCoor([vpX, vpY]: Vec2D): Vec2D {
 
-        const { center, gridSize } = this.viewData;
+        const { diffFromOrigin, gridSize } = this.viewData;
         const canvas = this.canvas;
         const width = canvas.width;
         const height = canvas.height;
 
         const canvasWidth2 = width / 2;
         const canvasHeight2 = height / 2;
-        const [cx, cy] = center;
+        const [cx, cy] = diffFromOrigin;
         return [
             (vpX - canvasWidth2) / gridSize - cx,
             (vpY - canvasHeight2) / gridSize - cy,
         ];
     }
 
-    public vpCenter(): Vec2D {
+    public get vpDiffFromOrigin(): Vec2D {
         const viewData = this.viewData;
-        const { center } = viewData;
-        return this.toVpCoor(center);
+        const { diffFromOrigin } = viewData;
+        return this.toVpCoor(diffFromOrigin);
+    }
+
+    public get centerOfCameraInGameCoor(): Vec2D {
+        const viewData = this.viewData;
+        const { diffFromOrigin } = viewData;
+        return subtract([0, 0], diffFromOrigin);
     }
 
     public isCircleInView(vpCoor: Vec2D, radius: number) {
@@ -152,42 +160,41 @@ export class CanvasOperator {
     public panTo(vpOffset: Vec2D) {
 
         const viewData = this.viewData;
-        const vpCenter = this.vpCenter();
-        const center = this.toGameCoor(vpCenter);
-        const vpCoor = add(vpOffset, vpCenter);
+        const vpDiffFromOrigin = this.vpDiffFromOrigin;
+        const diffFromOrigin = this.viewData.diffFromOrigin;
+        const vpCoor = add(vpOffset, vpDiffFromOrigin);
         const to = this.toGameCoor(vpCoor);
 
-        const offset = subtract(to, center);
+        const offset = subtract(to, diffFromOrigin);
 
         const dist = norm(offset);
 
         let i = 0;
         const numPans = 30;
         const speed = dist / numPans;
+        const proj = project(offset, speed);
 
         return () => {
             if (dist < 1 || ++i === numPans) {
                 return true;
             }
-            const proj = project(offset, speed);
-            viewData.center = subtract(viewData.center, proj);
+
+            const [px, py] = proj;
+            const next = subtract(viewData.diffFromOrigin, [px, py]);
+            viewData.diffFromOrigin = next;
             return false;
         };
     }
 
-    public zoom(e: WheelEvent, min = MIN_GRID_SIZE, max = MAX_GRID_SIZE) {
-
-        console.assert(min <= max);
+    public zoom(e: WheelEvent) {
 
         const viewData = this.viewData;
 
         const isZoomingIn = e.deltaY < 0;
-        const gridSize = viewData.gridSize;
-        const val = 1;
         if (isZoomingIn) {
-            viewData.gridSize = Math.min(max, gridSize + val);
+            viewData.gridSize = Math.min(MAX_GRID_SIZE, viewData.gridSize * ZOOM_FACTOR);
         } else {
-            viewData.gridSize = Math.max(min, gridSize - val);
+            viewData.gridSize = Math.max(MIN_GRID_SIZE, viewData.gridSize / ZOOM_FACTOR);
         }
     }
 }

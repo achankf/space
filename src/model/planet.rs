@@ -1,18 +1,13 @@
 use delaunator::{triangulate, Point};
 use distance_point_segment;
 use nalgebra::geometry::Point2;
-use ordered_float::OrderedFloat;
 use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::collections::{BTreeMap, VecDeque};
-use std::ops::{Index, IndexMut};
+use std::collections::VecDeque;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
-use wbg_rand::{Rng, WasmRng};
-use CityId;
-use DivisionId;
+use wbg_rand::Rng;
 use Galaxy;
 use NationId;
 use Orbit;
@@ -21,17 +16,17 @@ use PlanetEdge;
 use PlanetId;
 use PlanetVertexId;
 use SortedEdge;
-use CITY_DIST;
-use CITY_DIST_OFFSET;
+use VertexId;
 use EDGE_MAX_CITY_DIST;
+use PLANET_CITY_STEP_SIZE;
 
 // each node can have at most 8 edges, since each point is mapped to a grid tile
-const MAX_NUM_EDGES: usize = 8;
+const MAX_VERTEX_DEGREE: usize = 8;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct State {
     cost: u32,
-    position: u8,
+    position: VertexId,
 }
 
 // The priority queue depends on `Ord`.
@@ -57,67 +52,92 @@ impl PartialOrd for State {
 }
 
 impl Planet {
-    pub fn new(rng: &mut WasmRng, name: String, orbit: Orbit) -> Self {
-        let width = rng.gen_range(5, 16); // must be < 16 since 16^2=256 can't fit in u8
-        let height = rng.gen_range(5, 16);
-        let dim = (width as usize) * (height as usize);
-        let mut city_coors = Vec::with_capacity(2 * dim);
-        let mut city_coors2 = Vec::with_capacity(dim);
+    pub fn new(rng: &mut impl Rng, name: String, orbit: Orbit) -> Self {
+        let radius_after_padding = orbit.radius - 3.;
+        let radius_after_padding_squared = radius_after_padding * radius_after_padding;
+        assert!(radius_after_padding > 0.);
 
         // randomly generate points, each point is roughly mapped into a grid tile
-        for j in 0..height {
-            for i in 0..width {
-                let x_offset = rng.gen_range(0., CITY_DIST_OFFSET);
-                let x = (i as f32) * CITY_DIST + x_offset - CITY_DIST * (width as f32) / 2.;
-                let y_offset = rng.gen_range(0., CITY_DIST_OFFSET);
-                let y = (j as f32) * CITY_DIST + y_offset - CITY_DIST * (height as f32) / 2.;
-                city_coors2.push(Point {
-                    x: x as f64,
-                    y: y as f64,
-                });
-                city_coors.push(x);
-                city_coors.push(y);
-            }
-        }
-        let result = triangulate(&city_coors2).expect("No triangulation exists.");
-        let mut temp_adj_list = vec![HashMap::with_capacity(MAX_NUM_EDGES); dim];
+        let step_side = PLANET_CITY_STEP_SIZE;
+        let radius = orbit.radius;
+        let mut start_x = -radius;
+        let capacity_estimates = (radius / step_side).ceil() as usize;
 
-        for i in 0..result.triangles.len() / 3 {
-            let triangles = &result.triangles;
-            let base = i * 3;
-            let i0 = triangles[base] as u8;
-            let i1 = triangles[base + 1] as u8;
-            let i2 = triangles[base + 2] as u8;
+        let mut city_coors = Vec::with_capacity(2 * capacity_estimates);
+        let mut city_coors_tri = Vec::with_capacity(capacity_estimates);
 
-            let edge = SortedEdge::new(i0, i1);
-            let distance = Self::distance_helper(&city_coors, &edge);
-            if distance < EDGE_MAX_CITY_DIST {
-                temp_adj_list[edge.first() as usize].insert(edge.second(), distance);
-            }
+        while start_x < radius {
+            let next_x = start_x + step_side;
 
-            let edge = SortedEdge::new(i1, i2);
-            let distance = Self::distance_helper(&city_coors, &edge);
-            if distance < EDGE_MAX_CITY_DIST {
-                temp_adj_list[edge.first() as usize].insert(edge.second(), distance);
+            let mut start_y = -radius;
+            while start_y < radius {
+                let next_y = start_y + step_side;
+                let x = rng.gen_range(start_x, next_x);
+                let y = rng.gen_range(start_y, next_y);
+
+                // if point is within the circle (planet)
+                if x * x + y * y <= radius_after_padding_squared {
+                    city_coors.push(x);
+                    city_coors.push(y);
+                    city_coors_tri.push(Point {
+                        x: x as f64,
+                        y: y as f64,
+                    });
+                }
+
+                start_y = next_y;
             }
 
-            let edge = SortedEdge::new(i0, i2);
-            let distance = Self::distance_helper(&city_coors, &edge);
-            if distance < EDGE_MAX_CITY_DIST {
-                temp_adj_list[edge.first() as usize].insert(edge.second(), distance);
-            }
+            start_x = next_x;
         }
 
-        let mut adj_list = vec![Vec::with_capacity(MAX_NUM_EDGES); dim];
-        for (u, vs) in temp_adj_list.iter().enumerate() {
+        let num_vertices = city_coors_tri.len();
+
+        let temp_adj_list = triangulate(&city_coors_tri)
+            .and_then(|result| {
+                let mut ret = vec![HashMap::with_capacity(MAX_VERTEX_DEGREE); num_vertices];
+
+                for i in 0..result.triangles.len() / 3 {
+                    let triangles = &result.triangles;
+                    let base = i * 3;
+                    let i0 = VertexId::from_usize(triangles[base]);
+                    let i1 = VertexId::from_usize(triangles[base + 1]);
+                    let i2 = VertexId::from_usize(triangles[base + 2]);
+
+                    let edge = SortedEdge::new(i0, i1);
+                    let distance = Self::distance_helper(&city_coors, &edge);
+                    if distance < EDGE_MAX_CITY_DIST {
+                        let VertexId(vertex_idx) = edge.first();
+                        ret[vertex_idx as usize].insert(edge.second(), distance);
+                    }
+
+                    let edge = SortedEdge::new(i1, i2);
+                    let distance = Self::distance_helper(&city_coors, &edge);
+                    if distance < EDGE_MAX_CITY_DIST {
+                        let VertexId(vertex_idx) = edge.first();
+                        ret[vertex_idx as usize].insert(edge.second(), distance);
+                    }
+
+                    let edge = SortedEdge::new(i0, i2);
+                    let distance = Self::distance_helper(&city_coors, &edge);
+                    if distance < EDGE_MAX_CITY_DIST {
+                        let VertexId(vertex_idx) = edge.first();
+                        ret[vertex_idx as usize].insert(edge.second(), distance);
+                    }
+                }
+                Some(ret)
+            })
+            .unwrap_or_default();
+
+        let mut adj_list = vec![Vec::with_capacity(MAX_VERTEX_DEGREE); num_vertices];
+        for (u_idx, vs) in temp_adj_list.iter().enumerate() {
+            let u_vertex = VertexId::from_usize(u_idx);
             for (&v, &weight) in vs {
+                let VertexId(v_idx) = v;
                 let cost = (weight * 10000f32) as u32;
-                adj_list[u].push(PlanetEdge {
-                    vertex_idx: v,
-                    cost,
-                });
-                adj_list[v as usize].push(PlanetEdge {
-                    vertex_idx: u as u8,
+                adj_list[u_idx].push(PlanetEdge { vertex_id: v, cost });
+                adj_list[v_idx as usize].push(PlanetEdge {
+                    vertex_id: u_vertex,
                     cost,
                 });
             }
@@ -126,29 +146,30 @@ impl Planet {
         Self {
             name,
             orbit,
-            width,
-            height,
             city_coors,
             adj_list,
+            frontlines: Default::default(),
         }
     }
 
-    pub fn cal_dimension(&self) -> u8 {
-        self.width * self.height
+    pub fn num_vertices(&self) -> usize {
+        self.adj_list.len()
     }
 
-    pub fn distance(&self, edge: &SortedEdge<u8>) -> f32 {
+    pub fn distance(&self, edge: &SortedEdge<VertexId>) -> f32 {
         Self::distance_helper(&self.city_coors, edge)
     }
 
-    fn get_coor_helper(points: &Vec<f32>, vertex_idx: u8) -> (f32, f32) {
+    fn get_coor_helper(points: &Vec<f32>, vertex_id: VertexId) -> (f32, f32) {
+        let VertexId(vertex_idx) = vertex_id;
+
         let v2 = 2 * (vertex_idx as usize);
         let x = points[v2];
         let y = points[(v2 + 1)];
         (x, y)
     }
 
-    fn distance_helper(points: &Vec<f32>, &SortedEdge(u, v): &SortedEdge<u8>) -> f32 {
+    fn distance_helper(points: &Vec<f32>, &SortedEdge(u, v): &SortedEdge<VertexId>) -> f32 {
         let (x0, y0) = Self::get_coor_helper(points, u);
         let (x1, y1) = Self::get_coor_helper(points, v);
         (x1 - x0).hypot(y1 - y0)
@@ -160,7 +181,7 @@ impl Galaxy {
         &self,
         planet_id: PlanetId,
         nation_id: NationId,
-    ) -> HashMap<NationId, HashSet<u8>> {
+    ) -> HashMap<NationId, HashSet<VertexId>> {
         // run breadth-first search
 
         let planet = &self.planets[planet_id];
@@ -172,8 +193,9 @@ impl Galaxy {
         let mut nation_borders: HashMap<_, HashSet<_>> = Default::default();
 
         // outer loop set up the forest
-        for u in 0..num_vertices {
-            let u_vertex_id = PlanetVertexId::new(self, planet_id, u as u8);
+        for u_idx in 0..num_vertices {
+            let u_vertex = VertexId::from_usize(u_idx);
+            let u_vertex_id = PlanetVertexId::new(self, planet_id, u_vertex);
             let city = &self.cities[u_vertex_id.to_city_id(self)];
             // only interested in own nation's territory
             if city
@@ -184,14 +206,14 @@ impl Galaxy {
             }
 
             // is previously visited
-            if visited.replace(u as u8).is_some() {
+            if visited.replace(u_vertex).is_some() {
                 continue;
             }
 
             // breadth-first search for one vertex (u)
-            worklist.push_back((u as u8, city));
+            worklist.push_back((u_vertex, city));
             while !worklist.is_empty() {
-                let (cur_vertex_idx, city) = worklist.pop_front().unwrap();
+                let (cur_vertex_id, city) = worklist.pop_front().unwrap();
 
                 assert!(
                     city.controller
@@ -201,28 +223,28 @@ impl Galaxy {
                 // keep looking for the borders
 
                 for &PlanetEdge {
-                    vertex_idx: neighbour_vertex_idx,
+                    vertex_id: neighbour_vertex_id,
                     ..
-                } in &adj_list[cur_vertex_idx as usize]
+                } in &adj_list[cur_vertex_id]
                 {
-                    if visited.replace(neighbour_vertex_idx).is_some() {
+                    if visited.replace(neighbour_vertex_id).is_some() {
                         continue;
                     }
                     // not visited
 
-                    let neighbour_vertex_id =
-                        PlanetVertexId::new(self, planet_id, neighbour_vertex_idx as u8);
-                    let neighbour_city = &self.cities[neighbour_vertex_id.to_city_id(self)];
+                    let neighbour_planet_vertex_id =
+                        PlanetVertexId::new(self, planet_id, neighbour_vertex_id);
+                    let neighbour_city = &self.cities[neighbour_planet_vertex_id.to_city_id(self)];
 
                     if let Some(controller) = neighbour_city.controller {
                         if controller == nation_id {
                             // neighbour city is not a border province
-                            worklist.push_back((neighbour_vertex_idx, neighbour_city));
+                            worklist.push_back((neighbour_vertex_id, neighbour_city));
                         } else {
                             nation_borders
                                 .entry(controller)
                                 .or_default()
-                                .insert(neighbour_vertex_idx);
+                                .insert(neighbour_vertex_id);
                         }
                     }
                     // otherwise either territory is uncolonized
@@ -245,9 +267,11 @@ impl Galaxy {
         planet_id: PlanetId,
         nation_id: NationId,
         is_civilian: bool,
-        start: u8,
-        goal: u8,
-    ) -> Option<Vec<u8>> {
+        start_vertex: VertexId,
+        goal_vertex: VertexId,
+    ) -> Option<Vec<VertexId>> {
+        let VertexId(start) = start_vertex;
+
         let planet = &self.planets[planet_id];
         let adj_list = &planet.adj_list;
 
@@ -263,54 +287,57 @@ impl Galaxy {
         dist[start as usize] = 0;
         heap.push(State {
             cost: 0,
-            position: start,
+            position: start_vertex,
         });
 
         // Examine the frontier with lower cost nodes first (min-heap)
         while let Some(State { cost, position }) = heap.pop() {
             // Alternatively we could have continued to find all shortest paths
-            if position == goal {
-                let mut cur = Some(goal);
+            if position == goal_vertex {
+                let mut cur = Some(goal_vertex);
                 let mut ret = Vec::with_capacity(adj_list.len() / 10);
                 loop {
                     let node = cur.expect("a path is already found, so cur cannot be None");
                     ret.push(node);
 
-                    if node == start {
+                    if node == start_vertex {
                         return Some(ret);
                     }
-                    cur = prev[node as usize];
+                    let VertexId(vertex_idx) = node;
+                    cur = prev[vertex_idx as usize];
                 }
             }
 
             // Important as we may have already found a better way
-            if cost > dist[position as usize] {
+            let VertexId(position_idx) = position;
+            if cost > dist[position_idx as usize] {
                 continue;
             }
 
             // For each node we can reach, see if we can find a way with
             // a lower cost going through this node
-            for edge in
-                adj_list[position as usize]
-                    .iter()
-                    .filter(|&PlanetEdge { vertex_idx, .. }| {
-                        self.can_nation_enter(
-                            nation_id,
-                            PlanetVertexId::new(self, planet_id, *vertex_idx),
-                            is_civilian,
-                        )
-                    }) {
+            for edge in adj_list[position]
+                .iter()
+                .filter(|&PlanetEdge { vertex_id, .. }| {
+                    self.can_nation_enter(
+                        nation_id,
+                        PlanetVertexId::new(self, planet_id, *vertex_id),
+                        is_civilian,
+                    )
+                }) {
                 let next = State {
                     cost: cost + edge.cost,
-                    position: edge.vertex_idx,
+                    position: edge.vertex_id,
                 };
 
+                let VertexId(next_idx) = next.position;
+
                 // If so, add it to the frontier and continue
-                if next.cost < dist[next.position as usize] {
+                if next.cost < dist[next_idx as usize] {
                     heap.push(next);
                     // Relaxation, we have now found a better way
-                    dist[next.position as usize] = next.cost;
-                    prev[next.position as usize] = Some(position);
+                    dist[next_idx as usize] = next.cost;
+                    prev[next_idx as usize] = Some(position);
                 }
             }
         }
@@ -328,30 +355,16 @@ impl Galaxy {
         JsValue::from_serde(&ret).unwrap()
     }
 
-    pub fn has_division(&self, planet_idx: u16, vertex_idx: u8) -> bool {
+    pub fn has_division(&self, planet_idx: u16, vertex_idx: usize) -> bool {
         let planet_id = PlanetId::new(self, planet_idx);
-        let vertex_id = PlanetVertexId::new(self, planet_id, vertex_idx);
-        !self.stationed_divisions[vertex_id].is_empty()
+        let vertex_id = VertexId::from_usize(vertex_idx);
+        let planet_vertex_id = PlanetVertexId::new(self, planet_id, vertex_id);
+        !self.stationed_divisions[planet_vertex_id].is_empty()
     }
 
-    pub fn cal_planet_dim(&self, planet_idx: usize) -> u8 {
-        let planet = &self.planets[planet_idx];
-        planet.cal_dimension()
-    }
-
-    pub fn get_planet_width(&self, planet_id: usize) -> u8 {
+    pub fn get_planet_vertices_coors(&self, planet_id: usize) -> Vec<f32> {
         let planet = &self.planets[planet_id];
-        planet.width
-    }
-
-    pub fn get_planet_height(&self, planet_id: usize) -> u8 {
-        let planet = &self.planets[planet_id];
-        planet.height
-    }
-
-    pub fn get_planet_points(&self, planet_id: usize) -> *const f32 {
-        let planet = &self.planets[planet_id];
-        planet.city_coors.as_ptr()
+        planet.city_coors.clone()
     }
 
     pub fn get_planet_path(
@@ -359,24 +372,31 @@ impl Galaxy {
         planet_idx: u16,
         nation_idx: u16,
         is_civilian: bool,
-        start: u8,
-        goal: u8,
+        start: usize,
+        goal: usize,
     ) -> Vec<u8> {
         let planet_id = PlanetId::new(self, planet_idx);
         let nation_id = NationId::new(self, nation_idx);
+        let start = VertexId::from_usize(start);
+        let goal = VertexId::from_usize(goal);
         self.shortest_path(planet_id, nation_id, is_civilian, start, goal)
             .unwrap_or_default()
+            .into_iter()
+            .map(|VertexId(idx)| idx)
+            .collect()
     }
 
     pub fn get_planet_edges(&self, planet_id: usize) -> Vec<u8> {
         let planet = &self.planets[planet_id];
-        let mut ret = Vec::with_capacity(MAX_NUM_EDGES * planet.adj_list.len());
+        let mut ret = Vec::with_capacity(MAX_VERTEX_DEGREE * planet.adj_list.len());
 
-        for (u, vs) in planet.adj_list.iter().enumerate() {
-            for &PlanetEdge { vertex_idx: v, .. } in vs {
-                if (u as u8) < v {
-                    ret.push(u as u8);
-                    ret.push(v);
+        for (u_idx, vs) in planet.adj_list.iter().enumerate() {
+            let u = VertexId::from_usize(u_idx);
+            for &PlanetEdge { vertex_id: v, .. } in vs {
+                if u < v {
+                    let VertexId(v_idx) = v;
+                    ret.push(u_idx as u8);
+                    ret.push(v_idx);
                 }
             }
         }
@@ -408,11 +428,17 @@ impl Galaxy {
         }
 
         for (u, vs) in planet.adj_list.iter().enumerate() {
-            for &PlanetEdge { vertex_idx: v, .. } in vs {
-                if (u as u8) > v {
+            let u_vertex = VertexId::from_usize(u);
+            for &PlanetEdge {
+                vertex_id: v_vertex,
+                ..
+            } in vs
+            {
+                if u_vertex > v_vertex {
                     continue;
                 }
 
+                let VertexId(v) = v_vertex;
                 let u2 = (2 * u) as usize;
                 let v2 = (2 * v) as usize;
 

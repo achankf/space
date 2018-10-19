@@ -1,4 +1,4 @@
-import { bootstrap, CombatStyle, Galaxy, SquadKind } from "../galaxy";
+import { bootstrap, CombatStyle, Galaxy } from "../galaxy";
 import { Database, IData, ISubscriber } from "./database";
 import { TICK_PERIOD } from "./model/def";
 import { SwitchView } from "./view/SwitchView";
@@ -23,15 +23,9 @@ function makeInitialState(): Database {
 
     const db = makeInitialState();
 
-    const squadKindKeys = [];
-    // tslint:disable-next-line:forin
-    for (const key in SquadKind) {
-        squadKindKeys.push(key);
-    }
-    db.galaxy.add_division_template([squadKindKeys[SquadKind.Robot], squadKindKeys[SquadKind.Infantry]], CombatStyle.Push, false);
+    db.galaxy.add_division_template(2, 0, 0, CombatStyle.Push, false);
     const template = db.galaxy.get_division_template(0);
     console.log(template);
-    console.log(SquadKind[template.squads[0]]);
     db.galaxy.train_division(0);
     db.galaxy.train_division(0);
     db.galaxy.train_division(0);

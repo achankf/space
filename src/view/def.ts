@@ -87,8 +87,8 @@ export type TabData =
     IPeopleTab
     ;
 
-export const MAX_GRID_SIZE = 40;
-export const MIN_GRID_SIZE = 1;
+export const MAX_GRID_SIZE = 100;
+export const MIN_GRID_SIZE = 0.001;
 export const MIN_SHOW_GRID_SIZE = 10;
 export const BIG_GRID_FACTOR = 40;
 export const TWO_PI = 2 * Math.PI;

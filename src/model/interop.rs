@@ -1,3 +1,5 @@
+use coor::{CartesianCoor, PolarCoor};
+use delaunator::{triangulate, Point};
 use nalgebra::geometry::Point2;
 use ordered_float::OrderedFloat;
 use rand::prng::isaac::IsaacRng;
@@ -5,26 +7,11 @@ use rand::Rng;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
-use wbg_rand::wasm_rng;
-use BaseCraft;
-use BaseCraftStructure;
-use CityGraph;
-use CityId;
-use ColonyId;
-use CorporationId;
-use EnumMap;
-use Faction;
-use Foreign;
-use Freighter;
-use Galaxy;
-use Id;
-use NationId;
-use PlanetId;
-use PlanetVertexId;
-use Soldiers;
-use SortedEdge;
-use CITY_DIST;
-use CITY_RADIUS_LIMIT;
+use {
+    BaseCraft, BaseCraftStructure, CityGraph, CityId, ColonyId, CorporationId, EnumMap, Faction,
+    Freighter, Galaxy, Id, NationId, PlanetId, PlanetVertexId, Soldiers, SortedEdge, VertexId,
+    VertexToCityId, CITY_RADIUS_LIMIT,
+};
 
 #[derive(Serialize, Deserialize)]
 struct PlanetInfo {
@@ -77,10 +64,10 @@ impl Galaxy {
 
     pub fn interop_cal_draw_data(
         &self,
-        tlx: f32,
-        tly: f32,
-        brx: f32,
-        bry: f32,
+        tlx: f64, // top-left x
+        tly: f64, // top-left y
+        brx: f64, // bottom-right x
+        bry: f64, // bottom-right y
         grid_size: f32,
     ) -> JsValue {
         let ret = self.cal_draw_data_helper(tlx, tly, brx, bry, grid_size);
@@ -134,8 +121,11 @@ impl Galaxy {
     }
     */
 
-    pub fn get_city_idx(&mut self, planet_idx: u16, vertex_idx: u8) -> u16 {
-        let CityId(idx) = self.vertex_idx_to_city_id[planet_idx as usize][vertex_idx as usize];
+    pub fn get_city_idx(&mut self, planet_idx: usize, vertex_idx: usize) -> u32 {
+        let planet_id = PlanetId::from_usize(self, planet_idx);
+        let vertex_id = VertexId::from_usize(vertex_idx);
+        let planet_vertex_id = PlanetVertexId::new(self, planet_id, vertex_id);
+        let CityId(idx) = self.vertex_idx_to_city_id[planet_vertex_id];
         idx
     }
 
@@ -143,14 +133,15 @@ impl Galaxy {
         CITY_RADIUS_LIMIT
     }
 
-    pub fn cal_city_graph(&mut self, planet_idx: u16, vertex_idx: u8) -> CityGraph {
+    pub fn cal_city_graph(&mut self, planet_idx: u16, vertex_idx: usize) -> CityGraph {
         let planet_id = PlanetId(planet_idx);
-        let vertex_id = PlanetVertexId {
+        let vertex_id = VertexId::from_usize(vertex_idx);
+        let planet_vertex_id = PlanetVertexId {
             planet_id,
-            vertex_idx,
+            vertex_id,
         };
         self.city_graphs
-            .entry(vertex_id)
+            .entry(planet_vertex_id)
             .or_insert_with(|| {
                 let upper = (planet_idx as u64) << 32;
                 let lower = vertex_idx as u64;
@@ -159,56 +150,70 @@ impl Galaxy {
                 let mut rng = IsaacRng::new_from_u64(hash);
 
                 // TODO calculate development
-                let dev = rng.gen_range(5, 100);
+                let dev = rng.gen_range(20u8, 80u8);
 
-                let mut points2 = Vec::with_capacity(dev);
-                let mut points = Vec::with_capacity(2 * dev);
-                let mut dims = Vec::with_capacity(2 * dev);
+                let mut points2 = Vec::with_capacity(dev as usize);
+                let mut points = Vec::with_capacity(2 * dev as usize);
+                let mut dims = Vec::with_capacity(2 * dev as usize);
+
+                let mut visited = HashSet::new();
                 for _ in 0..dev {
-                    use std::f32::consts::PI;
-                    let a = rng.gen::<f32>() * 2. * PI;
-                    let r = CITY_RADIUS_LIMIT * rng.gen::<f32>().sqrt();
-                    let x = r * a.cos();
-                    let y = r * a.sin();
+                    let coor = PolarCoor::random_point_in_circle(&mut rng, CITY_RADIUS_LIMIT)
+                        .to_cartesian();
 
-                    let w = rng.gen_range(2, 7);
-                    let h = rng.gen_range(2, 7);
-                    points2.push((OrderedFloat(x), OrderedFloat(y)));
+                    if !visited.insert(coor) {
+                        continue;
+                    }
+
+                    let (x, y) = coor.to_pair();
+
+                    let w = rng.gen_range(0.1, 0.2);
+                    let h = rng.gen_range(0.1, 0.2);
+                    points2.push(Point {
+                        x: x as f64,
+                        y: y as f64,
+                    });
                     points.push(x);
                     points.push(y);
                     dims.push(w);
                     dims.push(h);
                 }
 
-                let edges = {
-                    let len = points2.len();
-                    let mut ret = HashSet::with_capacity(len * len);
-                    for i in 0..len {
-                        for j in i + 1..len {
-                            ret.insert(SortedEdge::new(i, j));
+                let roads = triangulate(&points2)
+                    .and_then(|result| {
+                        let mut visited = HashSet::new();
+
+                        let mut roads = Vec::with_capacity(600);
+
+                        for i in 0..result.triangles.len() / 3 {
+                            let triangles = &result.triangles;
+                            let base = i * 3;
+                            let i0 = triangles[base] as u8;
+                            let i1 = triangles[base + 1] as u8;
+                            let i2 = triangles[base + 2] as u8;
+
+                            let edge = SortedEdge::new(i0, i1);
+                            if visited.insert(edge) {
+                                roads.push(edge.first());
+                                roads.push(edge.second());
+                            }
+
+                            let edge = SortedEdge::new(i1, i2);
+                            if visited.insert(edge) {
+                                roads.push(edge.first());
+                                roads.push(edge.second());
+                            }
+
+                            let edge = SortedEdge::new(i0, i2);
+                            if visited.insert(edge) {
+                                roads.push(edge.first());
+                                roads.push(edge.second());
+                            }
                         }
-                    }
-                    ret
-                };
 
-                use kruskal;
-                let mst = kruskal::mst(
-                    &points2,
-                    &edges,
-                    |&(OrderedFloat(x1), OrderedFloat(y1)),
-                     &(OrderedFloat(x2), OrderedFloat(y2))| {
-                        let x_diff = x2 - x1;
-                        let y_diff = y2 - y1;
-                        x_diff.hypot(y_diff) as f64
-                    },
-                );
-
-                let mut roads = Vec::with_capacity(2 * mst.len());
-                for SortedEdge(u_idx, v_idx) in mst {
-                    roads.push(u_idx as u32);
-                    roads.push(v_idx as u32);
-                }
-                assert!(roads.len() == 0 || roads.len() / 2 == dev - 1); // a tree with |V| vertices has |V|-1 edges
+                        Some(roads)
+                    })
+                    .unwrap_or_default();
 
                 CityGraph {
                     num_structures: dev,
@@ -221,7 +226,8 @@ impl Galaxy {
     }
 
     pub fn get_colonized_map(&self, planet_idx: usize) -> Vec<i32> {
-        self.vertex_idx_to_city_id[planet_idx]
+        let VertexToCityId(data) = &self.vertex_idx_to_city_id;
+        data[planet_idx]
             .iter()
             .map(
                 |&CityId(city_idx)| match self.cities[city_idx as usize].owner {

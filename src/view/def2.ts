@@ -8,6 +8,7 @@ export interface IDrawStarData {
 }
 
 export interface IDrawPlanetData {
+    idx: number;
     name: string;
     radius: number;
     x: number;

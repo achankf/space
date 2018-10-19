@@ -1,8 +1,7 @@
 import { unionMut, Vec2D } from "myalgo-ts";
 import { Galaxy } from "../galaxy";
-import { memory } from "../galaxy_bg";
 import { INameSearchResult, IPlanetId, ISearchResult } from "./model/def";
-import { MIN_GRID_SIZE, TabData, TabKind } from "./view/def";
+import { TabData, TabKind } from "./view/def";
 import { IDrawGalaxyData } from "./view/def2";
 
 export interface IData {
@@ -28,7 +27,7 @@ const channelKindValues = [
 ];
 
 export interface IViewData {
-    center: Vec2D;
+    diffFromOrigin: Vec2D; // note: a vector that specify how far away the camera is away from the origin; the center of the screen (in game coordinate) is origin - diffFromOrigin
     gridSize: number;
 }
 
@@ -70,8 +69,8 @@ export class Database {
 
     // somewhat-persistent temp data; handled by external views
     public readonly galaxyViewData: IViewData = {
-        center: [0, 0],
-        gridSize: MIN_GRID_SIZE,
+        diffFromOrigin: [0, 0],
+        gridSize: 0.01,
     };
 
     public curTabId!: symbol;
@@ -125,7 +124,7 @@ export class Database {
         this.notify();
     }
 
-    public calDrawData(tlX: number, tlY: number, brX: number, brY: number, gridSize: number): IDrawGalaxyData {
+    public calDrawData([tlX, tlY]: Vec2D, [brX, brY]: Vec2D, gridSize: number): IDrawGalaxyData {
         return this.galaxy.interop_cal_draw_data(tlX, tlY, brX, brY, gridSize);
     }
 
@@ -201,13 +200,8 @@ export class Database {
         return this.galaxy.get_planet_edges(planetId);
     }
 
-    public getPlanetPoints(planetId: number) {
-        const ptr = this.galaxy.get_planet_points(planetId);
-        const dim = this.galaxy.cal_planet_dim(planetId);
-        const memorySize = 2 * dim;
-        const ret = new Float32Array(memory.buffer, ptr, memorySize);
-        console.assert(ret.length > 0);
-        return ret;
+    public getPlanetVerticesCoors(planetId: number) {
+        return this.galaxy.get_planet_vertices_coors(planetId);
     }
 
     public addPlanetTab(planetId: IPlanetId) {

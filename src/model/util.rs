@@ -1,11 +1,10 @@
 use nalgebra::geometry::Point2;
 use std::hash::Hash;
+use wbg_rand::{Rng, WasmRng};
 use Galaxy;
 use Locatable;
 use Orbit;
 use SortedEdge;
-use LOC_DIM_MAX;
-use LOC_HASH_FACTOR;
 
 impl<T> SortedEdge<T>
 where
@@ -30,49 +29,41 @@ where
     }
 }
 
-pub(crate) fn cal_star_orbit_coor(orbit_radius: f32, angle: f32) -> Point2<f32> {
-    cal_orbit_coor_helper(&Point2::origin(), orbit_radius, angle)
+pub(crate) fn cal_star_orbit_coor(orbit_radius: f32, angle: f32) -> (f64, f64) {
+    cal_orbit_coor_helper((0., 0.), orbit_radius, angle)
 }
 
-pub(crate) fn cal_orbit_coor(state: &Galaxy, orbit: &Orbit, angle: f32) -> Point2<f32> {
+pub(crate) fn cal_orbit_coor(state: &Galaxy, orbit: &Orbit, angle: f32) -> (f64, f64) {
     let center = orbit.center;
     let orbit_radius = orbit.orbit_radius;
-
-    match center {
-        Locatable::Star(star_id) => {}
-        _ => {}
-    }
 
     let base_coor = state
         .locs
         .get(&center)
         .expect("orbit's center must have a location");
 
-    return cal_orbit_coor_helper(base_coor, orbit_radius, angle);
+    return cal_orbit_coor_helper(*base_coor, orbit_radius, angle);
 }
 
-pub(crate) fn cal_orbit_coor_helper(c: &Point2<f32>, orbit_radius: f32, angle: f32) -> Point2<f32> {
-    let o: Point2<_> = Point2::new(orbit_radius * angle.cos(), orbit_radius * angle.sin());
+pub(crate) fn cal_orbit_coor_helper(
+    (cx, cy): (f64, f64),
+    orbit_radius: f32,
+    angle: f32,
+) -> (f64, f64) {
+    let (ox, oy) = (orbit_radius * angle.cos(), orbit_radius * angle.sin());
 
-    let new_p = c - o; // this returns a matrix...
-    let ret = Point2::new(new_p.x, new_p.y);
-    ret
+    (cx - ox as f64, cy - oy as f64)
 }
 
-// hash function for locations (2d vector)
-pub(crate) fn loc_hash(p: &Point2<f32>) -> i32 {
-    let s = p / LOC_HASH_FACTOR;
-    let x = p.x;
-    let y = p.y;
-    let xi = (x / LOC_HASH_FACTOR).floor() as i32;
-    let yi = (y / LOC_HASH_FACTOR).floor() as i32;
-    loc_hash_scaled(&(xi, yi))
-}
-
-pub(crate) fn loc_hash_scaled((x, y): &(i32, i32)) -> i32 {
-    assert!(x.abs() < LOC_DIM_MAX);
-    assert!(y.abs() < LOC_DIM_MAX);
-    (x << 16) + y
+pub fn is_circle_rect_intersect(
+    (cx, cy, radius): (f64, f64, f32),
+    (tlx, tly, brx, bry): (f64, f64, f64, f64),
+) -> bool {
+    // https://yal.cc/rectangle-circle-intersection-test/
+    let dx = cx - tlx.max(cx.min(brx));
+    let dy = cy - tly.max(cy.min(bry));
+    let r_squared = radius as f64 * radius as f64;
+    (dx * dx + dy * dy) < r_squared
 }
 
 pub fn distance_point_segment(p: &Point2<f32>, v1: &Point2<f32>, v2: &Point2<f32>) -> f32 {

@@ -1,17 +1,21 @@
-use loc_hash_scaled;
+use kdtree::distance::squared_euclidean;
 use nalgebra::geometry::Point2;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use strsim::normalized_levenshtein;
+use util::is_circle_rect_intersect;
+use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 use CorporationId;
 use Galaxy;
 use Id;
 use Locatable;
+use LocationIndex;
 use NationId;
 use PlanetId;
 use SpacecraftKind;
 use StarId;
-use LOC_HASH_FACTOR;
+use RADIUS_OF_LARGEST_OBJ;
+use RADIUS_OF_LARGEST_OBJ_SQUARED;
 
 #[derive(Serialize, Deserialize)]
 pub struct SearchResult {
@@ -29,18 +33,19 @@ pub struct NameResult {
 pub struct DrawStarData {
     name: String,
     radius: f32,
-    x: f32,
-    y: f32,
+    x: f64,
+    y: f64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DrawPlanetData {
+    idx: u16,
     name: String,
     radius: f32,
-    x: f32,
-    y: f32,
-    cx: f32,
-    cy: f32,
+    x: f64,
+    y: f64,
+    cx: f64,
+    cy: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,20 +65,21 @@ pub struct DrawGalaxyData {
 
 impl Galaxy {
     pub fn search(&self, p1: &Point2<f32>) -> Vec<SearchResult> {
+        /*
         let x1 = p1.x;
         let y1 = p1.y;
         let fx = (x1 / LOC_HASH_FACTOR).floor() as i32;
         let fy = (y1 / LOC_HASH_FACTOR).floor() as i32;
-
+        
         // search the location with an oversized rectangle
         let startx = fx - 1;
         let starty = fy - 1;
         let limitx = fx + 1;
         let limity = fy + 1;
-
+        
         let result = self.search_range_helper(startx, starty, limitx, limity);
         let result_len = result.len();
-
+        
         result
             .into_iter()
             // .filter(|id| match id {
@@ -91,18 +97,20 @@ impl Galaxy {
                         (star.name.to_string(), star.radius)
                     }
                 };
-
+        
                 let p2 = self
                     .locs
                     .get(&id)
                     .expect("search_helper: map object should have a location");
-
+        
                 let dist = (p2 - p1).norm();
                 if dist <= radius {
                     acc.push(SearchResult { id, name });
                 }
                 acc
             })
+            */
+        Vec::new()
     }
 
     pub fn search_name(&self, target: &str) -> Vec<NameResult> {
@@ -161,36 +169,54 @@ impl Galaxy {
 
     pub fn cal_draw_data_helper(
         &self,
-        tlx: f32,
-        tly: f32,
-        brx: f32,
-        bry: f32,
+        tlx: f64, // top-left x
+        tly: f64, // top-left y
+        brx: f64, // bottom-right x
+        bry: f64, // bottom-right y
         grid_size: f32,
     ) -> DrawGalaxyData {
-        // floored
-        let startx = (tlx / LOC_HASH_FACTOR).floor() as i32;
-        let starty = (tly / LOC_HASH_FACTOR).floor() as i32;
+        let LocationIndex(data) = &self.loc_idx;
 
-        // ceiled
-        let limitx = (brx / LOC_HASH_FACTOR).ceil() as i32;
-        let limity = (bry / LOC_HASH_FACTOR).ceil() as i32;
+        // rectangle is not a point
+        assert!(tlx < brx);
+        assert!(tly < bry);
 
-        self.search_range_helper(startx, starty, limitx, limity)
+        // center of the bounding bound (screen)
+        let cx = (tlx + brx) / 2.;
+        let cy = (tly + bry) / 2.;
+
+        // perform a circle search
+        let width = brx - tlx;
+        let height = bry - tly;
+        let radius_squared =
+            (width * width + height * height).max(RADIUS_OF_LARGEST_OBJ_SQUARED as f64); // radius is the hypotenuse; hence search will overestimate
+
+        data.within(&[cx, cy], radius_squared, &squared_euclidean)
+            .expect("not handled")
             .into_iter()
-            .fold(DrawGalaxyData::default(), |mut acc, id| {
+            // refine search
+            .fold(DrawGalaxyData::default(), |mut acc, (_, &id)| {
                 match id {
                     Locatable::Star(StarId(idx)) => {
                         let star = &self.stars[idx as usize];
-                        let p = self
+                        let (x, y) = self
                             .locs
                             .get(&id)
                             .expect("star must have a location")
                             .clone();
+
+                        let is_intersect =
+                            is_circle_rect_intersect((x, y, star.radius), (tlx, tly, brx, bry));
+
+                        if !is_intersect {
+                            return acc;
+                        }
+
                         acc.stars.push(DrawStarData {
                             name: star.name.clone(),
                             radius: star.radius,
-                            x: p.x,
-                            y: p.y,
+                            x,
+                            y,
                         });
                     }
                     Locatable::Planet(PlanetId(idx)) => {
@@ -203,25 +229,33 @@ impl Galaxy {
                             return acc;
                         }
 
-                        let p = self
+                        let (x, y) = self
                             .locs
                             .get(&id)
                             .expect("star must have a location")
                             .clone();
 
-                        let c = self
+                        let (cx, cy) = self
                             .locs
                             .get(&orbit.center)
                             .expect("star must have a location")
                             .clone();
 
+                        let is_intersect =
+                            is_circle_rect_intersect((x, y, orbit.radius), (tlx, tly, brx, bry));
+
+                        if !is_intersect {
+                            return acc;
+                        }
+
                         acc.planets.push(DrawPlanetData {
+                            idx,
                             name: planet.name.clone(),
                             radius: orbit.radius,
-                            x: p.x,
-                            y: p.y,
-                            cx: c.x,
-                            cy: c.y,
+                            x,
+                            y,
+                            cx,
+                            cy,
                         });
                     }
                 };
@@ -231,6 +265,7 @@ impl Galaxy {
 }
 
 impl Galaxy {
+    /*
     fn search_range_helper(
         &self,
         startx: i32,
@@ -240,7 +275,7 @@ impl Galaxy {
     ) -> Vec<Locatable> {
         assert!(startx <= limitx);
         assert!(starty <= limity);
-
+    
         (startx..=limitx)
             .flat_map(|x| {
                 let ret: Vec<_> = (starty..=limity)
@@ -253,6 +288,7 @@ impl Galaxy {
             })
             .collect()
     }
+    */
 }
 
 // boilerplate codes for binary heap

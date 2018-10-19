@@ -1,10 +1,9 @@
 import { subtract, Vec2D } from "myalgo-ts";
 import { Galaxy } from "../../galaxy";
-import { memory } from "../../galaxy_bg";
 import { ChannelKind, Database, ISubscriber, IViewData } from "../database";
 import { CanvasOperator } from "./CanvasOperator";
 import { ColonyView } from "./ColonyView";
-import { MIN_GRID_SIZE, TWO_PI } from "./def";
+import { TWO_PI } from "./def";
 import { clearChildren } from "./helper";
 
 const TEMPLATE = document.getElementById("planetView") as HTMLTemplateElement;
@@ -28,8 +27,8 @@ export class PlanetView
     public static readonly cityRadiusLimit = Galaxy.get_city_radius_limit();
 
     public readonly planetViewData: IViewData = {
-        center: [0, 0],
-        gridSize: MIN_GRID_SIZE,
+        diffFromOrigin: [0, 0],
+        gridSize: 1,
     };
 
     private updatePanAnimation?: () => boolean;
@@ -42,7 +41,6 @@ export class PlanetView
     private ctx: CanvasRenderingContext2D;
     private operator: CanvasOperator;
     private shouldRedrawView = true;
-    private readonly planetDim = this.db.galaxy.cal_planet_dim(this.planetId);
 
     private tileId?: number;
 
@@ -51,8 +49,6 @@ export class PlanetView
         public readonly planetId: number,
     ) {
         super();
-
-        console.assert(this.planetDim > 0);
 
         const shadowRoot = this.attachShadow({ mode: "open" });
         shadowRoot.appendChild(TEMPLATE.content.cloneNode(true));
@@ -148,7 +144,7 @@ export class PlanetView
         if (this.shouldRedrawView) {
 
             // note: need to copy the data because memory may invalidate upon calling (any wasm object's) free()
-            const points = this.db.getPlanetPoints(this.planetId);
+            const points = this.db.getPlanetVerticesCoors(this.planetId);
             const points2 = [];
             for (let i = 0; i < points.length; i += 2) {
                 const x = points[i];
@@ -195,9 +191,10 @@ export class PlanetView
                 const numStructures = graph.num_structures;
 
                 if (numStructures > 0) {
-                    const detailCityPoints = new Float32Array(memory.buffer, graph.get_points(), 2 * numStructures);
-                    const dims = new Uint8Array(memory.buffer, graph.get_dims(), 2 * numStructures);
-                    const roads = new Uint32Array(memory.buffer, graph.get_roads(), (numStructures - 1) * 2); // n-1 edges in a tree with n vertices
+                    const detailCityPoints = graph.get_points();
+                    const dims = graph.get_dims();
+                    const roads = graph.get_roads(); // n-1 edges in a tree with n vertices
+
                     ctx.save();
                     ctx.beginPath();
                     ctx.strokeStyle = "gray";
@@ -312,7 +309,7 @@ export class PlanetView
             points.forEach(({ vpCoor }, vertexIdx) => {
 
                 const targetNationId = colonized[vertexIdx];
-                if (targetNationId < 0 || targetNationId === ownNationId || galaxy.is_at_war_with(ownNationId, targetNationId)) {
+                if (targetNationId < 0 || targetNationId === ownNationId || galaxy.interop_is_at_war_with(ownNationId, targetNationId)) {
                     return;
                 }
 
@@ -341,7 +338,7 @@ export class PlanetView
             points.forEach(({ vpCoor }, vertexIdx) => {
 
                 const targetNationId = colonized[vertexIdx];
-                if (targetNationId < 0 || targetNationId === ownNationId || !galaxy.is_at_war_with(ownNationId, targetNationId)) {
+                if (targetNationId < 0 || targetNationId === ownNationId || !galaxy.interop_is_at_war_with(ownNationId, targetNationId)) {
                     return;
                 }
 

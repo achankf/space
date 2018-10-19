@@ -1,19 +1,8 @@
 use cal_orbit_coor;
 use cal_star_orbit_coor;
-use loc_hash;
-use std::collections::HashSet;
+use kdtree::KdTree;
 use wasm_bindgen::prelude::wasm_bindgen;
-use DivisionId;
-use DivisionLocation;
-use EnumMap;
-use Galaxy;
-use Locatable;
-use PlanetId;
-use PlanetVertexId;
-use Product;
-use StarId;
-use ANGLE_CHANGE;
-use TWO_PI;
+use {ANGLE_CHANGE, DivisionId, DivisionLocation, Galaxy, Locatable, LocationIndex, PlanetId, PlanetVertexId, Product, StarId, TWO_PI};
 
 #[wasm_bindgen]
 impl Galaxy {
@@ -21,6 +10,8 @@ impl Galaxy {
         self.cal_world()
             .cal_division_training()
             .update_war_goals()
+            .update_battles()
+            .update_frontlines()
             .cal_action_queue()
             .cal_galaxy_movement()
             .cal_playable_moves()
@@ -30,6 +21,38 @@ impl Galaxy {
 }
 
 impl Galaxy {
+    pub fn update_battles(mut self) -> Self {
+        //
+
+        /*
+        for planet in &mut self.planets {
+            for battle in &mut planet.battles {
+                let attacking = &battle.attacking_divisions;
+                let defending = &battle.defending_divisions;
+        
+                for (i, &attacker_id) in attacking.iter().enumerate() {
+                    //
+                    let attacker = &self.divisions[attacker_id];
+                    // attacker.
+                }
+            }
+        }
+        */
+
+        self
+    }
+
+    pub fn update_frontlines(mut self) -> Self {
+        //
+        for planet in &mut self.planets {
+            //
+            for frontline in &mut planet.frontlines {
+                //
+            }
+        }
+        self
+    }
+
     pub fn update_war_goals(mut self) -> Self {
         for (attacker, goals) in self.war_goals.iter_mut() {
             for (defender, goal) in goals.iter_mut() {
@@ -69,34 +92,22 @@ impl Galaxy {
     pub fn cal_division_training(mut self) -> Self {
         const FULLY_TRAINED_DAYS: u8 = 100;
 
-        // Train all units. Then move fully trained units to the undeployed queue.
-        {
-            let divisions_undeployed = &mut self.divisions_undeployed;
-
-            for divisions in self.divisions_in_training.values_mut() {
-                for (id, progress) in divisions.iter_mut() {
-                    *progress += 1;
-
-                    if *progress == FULLY_TRAINED_DAYS {
-                        divisions_undeployed.insert(*id);
-
-                        use log;
-                        log(&format!("Division {:?} is fully trained", *id));
-                    }
-                }
-
-                divisions.retain(|_, progress| {
-                    if *progress == FULLY_TRAINED_DAYS {
-                        false
-                    } else {
-                        true
-                    }
-                });
+        for divisions in self.divisions_in_training.values_mut() {
+            for (id, progress) in divisions.iter_mut() {
+                *progress += 1;
             }
 
-            self.divisions_in_training
-                .retain(|_, divisions| !divisions.is_empty());
+            divisions.retain(|_, progress| {
+                if *progress == FULLY_TRAINED_DAYS {
+                    false
+                } else {
+                    true
+                }
+            });
         }
+
+        self.divisions_in_training
+            .retain(|_, divisions| !divisions.is_empty());
 
         self
     }
@@ -351,17 +362,16 @@ impl Galaxy {
     pub fn cal_planet_movement(mut self) -> Self {
         for (division_id, location) in self.division_location.iter_mut() {
             if let DivisionLocation::Travel {
-                vertex_id,
+                planet_vertex_id,
                 moved,
                 path,
             } = location
             {
                 let PlanetVertexId {
                     planet_id,
-                    vertex_idx,
-                } = vertex_id;
-                let PlanetId(idx) = planet_id;
-                let planet = &mut self.planets[*idx as usize];
+                    vertex_id,
+                } = planet_vertex_id;
+                let planet = &mut self.planets[*planet_id];
                 let next_vertex = path
                     .last()
                     .expect("path shouldn't be empty for DivisionLocation::Travel");
@@ -516,13 +526,18 @@ impl Galaxy {
 
         // recreate index
 
-        self.loc_idx.clear();
+        let size_hint = {
+            let LocationIndex(old) = self.loc_idx;
+            old.size()
+        };
 
-        for (&id, coor) in &self.locs {
-            let hash = loc_hash(coor);
-            let mut entry = self.loc_idx.entry(hash).or_insert(Default::default());
-            entry.insert(id);
+        let mut loc_idx = KdTree::new_with_capacity(2, size_hint.max(1000));
+
+        for (&id, &(x, y)) in &self.locs {
+            loc_idx.add([x as f64, y as f64], id).unwrap();
         }
+
+        self.loc_idx = LocationIndex(loc_idx);
 
         self
     }

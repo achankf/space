@@ -1,4 +1,5 @@
 #![feature(self_struct_ctor)]
+#![feature(non_ascii_idents)]
 
 extern crate strsim;
 extern crate wasm_bindgen;
@@ -8,13 +9,16 @@ extern crate serde_derive;
 #[macro_use]
 extern crate enum_map;
 extern crate delaunator;
+extern crate kdtree;
 extern crate nalgebra;
 extern crate ordered_float;
 extern crate rand;
 
 pub mod cal_state;
 mod city;
+pub mod coor;
 pub mod division;
+pub mod equipment;
 pub mod galaxy;
 pub mod id;
 pub mod interop;
@@ -27,36 +31,35 @@ mod unionfind;
 mod util;
 
 use enum_map::EnumMap;
+use kdtree::KdTree;
 use nalgebra::geometry::Point2;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::f32::consts::PI;
 use std::hash::Hash;
-use util::{
-    cal_orbit_coor, cal_star_orbit_coor, distance_point_segment, loc_hash, loc_hash_scaled,
-};
+use util::{cal_orbit_coor, cal_star_orbit_coor, distance_point_segment};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct CityGraph {
-    pub num_structures: usize,
+    pub num_structures: u8,
     points: Vec<f32>,
-    dims: Vec<u8>,
-    roads: Vec<u32>,
+    dims: Vec<f32>,
+    roads: Vec<u8>,
 }
 
 #[wasm_bindgen]
 impl CityGraph {
-    pub fn get_points(&self) -> *const f32 {
-        self.points.as_ptr()
+    pub fn get_points(&self) -> Vec<f32> {
+        self.points.clone()
     }
 
-    pub fn get_dims(&self) -> *const u8 {
-        self.dims.as_ptr()
+    pub fn get_dims(&self) -> Vec<f32> {
+        self.dims.clone()
     }
 
-    pub fn get_roads(&self) -> *const u32 {
-        self.roads.as_ptr()
+    pub fn get_roads(&self) -> Vec<u8> {
+        self.roads.clone()
     }
 }
 
@@ -103,16 +106,33 @@ extern "C" {
 }
 
 const TWO_PI: f32 = 2.0 * PI;
-const LOC_HASH_FACTOR: f32 = 10.0; // should be larger than all entity represented on the map
-const LOC_DIM_MAX: i32 = 2 << 15;
 const ANGLE_CHANGE: f32 = 0.001;
 const TICKS_PER_SECOND: u32 = 10;
 
-const CITY_DIST: f32 = 50.;
+const CITY_DIST: f32 = 10.;
 const CITY_DIST_OFFSET: f32 = CITY_DIST / 2.;
 const EDGE_MAX_CITY_DIST: f32 = 2.5 * CITY_DIST;
 
 const CITY_RADIUS_LIMIT: f32 = CITY_DIST / 5.;
+
+const PLANET_CITY_STEP_SIZE: f32 = MIN_PLANET_RADIUS / 0.5;
+const MIN_PLANET_RADIUS: f32 = 5.;
+const MAX_PLANET_RADIUS: f32 = 30.;
+const MIN_STAR_RADIUS: f32 = 20.;
+const MAX_STAR_RADIUS: f32 = 40.;
+const NUM_STAR_ORBITS: usize = 10;
+const MIN_STARS_PER_ORBIT: usize = 4;
+const MAX_STARS_PER_ORBIT: usize = 10;
+const MIN_PLANETS_PER_SYSTEM: usize = 4;
+const MAX_PLANETS_PER_SYSTEM: usize = 10;
+const MIN_DIST_BETWEEN_PLANETS: f32 = 5. * MAX_PLANET_RADIUS + MAX_STAR_RADIUS;
+const MAX_DIST_BETWEEN_PLANETS: f32 = 2. * MIN_DIST_BETWEEN_PLANETS;
+const MAX_SYSTEM_RADIUS: f32 = MAX_PLANETS_PER_SYSTEM as f32 * MAX_DIST_BETWEEN_PLANETS;
+const NUM_PLANET_ESTIMATE: usize = (NUM_STAR_ORBITS * NUM_STAR_ORBITS * 10) as usize;
+
+// any objects' should be less than RADIUS_OF_LARGEST_OBJ, otherwise search functions won't work
+const RADIUS_OF_LARGEST_OBJ: f32 = MAX_STAR_RADIUS;
+const RADIUS_OF_LARGEST_OBJ_SQUARED: f32 = RADIUS_OF_LARGEST_OBJ * RADIUS_OF_LARGEST_OBJ;
 
 #[wasm_bindgen]
 pub fn get_planet_vertex_dist() -> f32 {
@@ -147,7 +167,7 @@ pub struct DivisionId(usize);
 pub struct DivisionTemplateId(usize);
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub struct CityId(u16);
+pub struct CityId(u32);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct WarId(usize);
@@ -155,7 +175,7 @@ pub struct WarId(usize);
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct PlanetVertexId {
     planet_id: PlanetId,
-    vertex_idx: u8,
+    vertex_id: VertexId,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
@@ -163,6 +183,9 @@ pub struct ColonyId {
     planet_idx: u16,
     colony_idx: u16,
 }
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
+pub struct VertexId(u8);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct SpacecraftId {
@@ -226,200 +249,56 @@ pub struct SortedEdge<T>(T, T)
 where
     T: Copy + Clone + PartialOrd + Ord + PartialEq + Eq + Hash;
 
-#[derive(Hash, Eq, PartialEq)]
-enum Armor {
-    // armor
-    ArmoredMount {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        breakthrough: u8,
-        consumption: u8,
-        mobility: u8,
-    },
-    Tank {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        breakthrough: u8,
-        consumption: u8,
-        mobility: u8,
-    },
-    HoverTank {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        breakthrough: u8,
-        consumption: u8,
-        mobility: u8,
-    },
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct MeleeVariant {
+    durability: u8,  // how likely that tools don't break
+    reach: u8,       // contribute to initiative in shock phase
+    sharpness: u8,   // contribute to damage
+    consumption: u8, // consumption reduction, with deminishing returns
 }
 
-#[derive(Hash, Eq, PartialEq)]
-enum Logistics {
-    // trade & supply & maneuver
-    Mount {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        capacity: u8,
-        consumption: u8,
-        mobility: u8,
-    },
-    Truck {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        capacity: u8,
-        consumption: u8,
-        mobility: u8,
-    },
-    HoverTruck {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        capacity: u8,
-        consumption: u8,
-        mobility: u8,
-    },
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct RangeVariant {
+    durability: u8,  // how likely that tools don't break
+    range: u8,       // contribute to initiative in fire phase
+    precision: u8,   // increase damage
+    ammunition: u8,  // determine how many extra shots in fire phase
+    consumption: u8, // consumption reduction, with deminishing returns
 }
 
-#[derive(Hash, Eq, PartialEq)]
-enum Artillery {
-    // bomb
-    Catapult {
-        tech: u16,
-        durability: u8,
-        range: u8, // range advantage determines extra first strikes before combat
-        precision: u8,
-        ammunition: u8, // bonus firing rounds
-        consumption: u8,
-    }, // pre-industrial
-    Artillery {
-        tech: u16,
-        durability: u8,
-        range: u8, // range advantage determines extra first strikes before combat
-        precision: u8,
-        explosive: u8,
-        ammunition: u8, // bonus firing rounds
-        consumption: u8,
-    }, // industrial
-    ParticleCannon {
-        tech: u16,
-        durability: u8,
-        range: u8, // range advantage determines extra first strikes before combat
-        precision: u8,
-        power: u8,
-        ammunition: u8, // bonus firing rounds
-        consumption: u8,
-    }, // galactic
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ArtilleryVariant {
+    durability: u8,  // how likely that tools don't break
+    range: u8,       // range advantage determines extra first strikes before combat
+    shell: u8,       // increase damage
+    payload: u8,     // bonus firing rounds
+    consumption: u8, // consumption reduction, with deminishing returns
 }
 
-#[derive(Hash, Eq, PartialEq)]
-enum MeleeWeapon {
-    // shock
-    Spear {
-        tech: u16,
-        durability: u8,
-        hardness: u8,
-        reach: u8,
-        sharpness: u8,
-        consumption: u8,
-    }, // pre-industrial
-    Bayonet {
-        tech: u16,
-        durability: u8,
-        hardness: u8,
-        reach: u8,
-        sharpness: u8,
-        consumption: u8,
-    }, // industrial
-    LightSaber {
-        tech: u16,
-        durability: u8,
-        hardness: u8,
-        reach: u8,
-        sharpness: u8,
-        consumption: u8,
-    }, // galactic
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct TankVariant {
+    durability: u8,   // how likely that tools don't break
+    armor: u8,        // reduce damage
+    breakthrough: u8, // increase combine arm bonus to division
+    consumption: u8,  // consumption reduction, with deminishing returns
 }
 
-#[derive(Hash, Eq, PartialEq)]
-enum RangeWeapon {
-    // fire
-    Bow {
-        tech: u16,
-        durability: u8,
-        range: u8, // range advantage determines extra first strikes before combat
-        precision: u8,
-        reload: u8,
-        ammunition: u8, // bonus firing rounds
-        consumption: u8,
-    }, // pre-industrial
-    Firearm {
-        tech: u16,
-        durability: u8,
-        range: u8, // range advantage determines extra first strikes before combat
-        precision: u8,
-        reload: u8,
-        ammunition: u8, // bonus firing rounds
-        consumption: u8,
-    }, // industrial
-    Phaser {
-        tech: u16,
-        durability: u8,
-        range: u8, // range advantage determines extra first strikes before combat
-        precision: u8,
-        reload: u8,
-        ammunition: u8, // bonus firing rounds
-        consumption: u8,
-    }, // galactic
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct PowerArmourVariant {
+    durability: u8,   // how likely that tools don't break
+    armor: u8,        // reduce damage
+    breakthrough: u8, // increase combine arm bonus to division
+    consumption: u8,  // consumption reduction, with deminishing returns
 }
 
-#[derive(Hash, Eq, PartialEq)]
-enum PowerArmor {
-    // power armor
-    Exoskeleton {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        breakthrough: u8,
-        consumption: u8,
-        mobility: u8,
-    }, // late-industrial, early galactic
-    MobileSuit {
-        tech: u16,
-        armor: u8,
-        durability: u8,
-        breakthrough: u8,
-        consumption: u8,
-        mobility: u8,
-    }, // galactic, gundam
-}
-
-#[derive(Hash, Eq, PartialEq)]
-enum Equipment {
-    Melee(MeleeWeapon),
-    Range(RangeWeapon),
-    Artillery(Artillery),
-    Armor(Armor),
-    PowerArmor(PowerArmor),
-    Logistics(Logistics),
-}
-
-// shock phase - occur often in primitive societies
-// fire phase - occur often in advanced societies
-#[wasm_bindgen]
-#[derive(PartialEq, Serialize, Deserialize)]
-pub enum SquadKind {
-    // combat unit
-    Infantry,
-    Robot,
-    Tank,
-
-    // trade & supply
-    Wagon,
-    Colonist, // move troops to uncolonized tiles to colonize the tiles
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct LogisticsVariant {
+    durability: u8,   // how likely that tools don't break
+    armor: u8,        // reduce damage
+    capacity: u8,     // bonus cargo space
+    breakthrough: u8, // increase combine arm bonus to division
+    consumption: u8,  // consumption reduction, with deminishing returns
+    mobility: u8,     // bonus speed to division
 }
 
 #[wasm_bindgen]
@@ -433,42 +312,114 @@ pub enum CombatStyle {
 
 #[derive(Serialize, Deserialize)]
 struct DivisionTemplate {
-    squads: Vec<SquadKind>,
     style: CombatStyle,
+    num_infantry_squads: usize,
+    num_artillery_squads: usize,
+    num_tank_squads: usize,
+    max_speed: usize,
+    max_morale: usize,
     is_civilian: bool,
-    has_colonist: bool,
+}
+
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
+pub struct EquipmentKey {
+    tech_level: usize,
+    variant_total: usize,
+}
+
+pub trait EquipmentVariant {
+    /// Returns the sum of variant points that the variant has spent.
+    fn sum(&self) -> usize;
+}
+
+pub struct EquipmentStore<T: EquipmentVariant>(BTreeMap<EquipmentKey, HashMap<T, usize>>);
+
+impl<T: EquipmentVariant> Default for EquipmentStore<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
 }
 
 pub struct Division {
     commander: Option<SpecialistId>,
     template_id: DivisionTemplateId,
+    morale: u32,
     manpower: u32,
-    arsenal: HashMap<Equipment, usize>,
+    melee_equipments: EquipmentStore<MeleeVariant>,
+    range_equipments: EquipmentStore<RangeVariant>,
+    artillery_equipments: EquipmentStore<ArtilleryVariant>,
+    tank_equipments: EquipmentStore<TankVariant>,
+    power_armour_equipments: EquipmentStore<PowerArmourVariant>,
+    logistics_equipments: EquipmentStore<LogisticsVariant>,
     experience: u16,
     cargo: EnumMap<Product, usize>,
     allegiance: NationId,
+}
+
+pub struct DivisionStats {
+    /*
+    shock_damage: u32,  // melee attack
+    fire_damage: u32,   // range attack
+    pierce_damage: u32, // reduction of enemy armour
+    shock_defense: u32,
+    fire_defense: u32,
+    */
+    attack: u32,
+    defense: u32,
+    speed: u32,
+    // armour: u32,
+}
+
+pub struct DivisionDamage {
+    shock: u32,  // melee attack
+    fire: u32,   // range attack
+    pierce: u32, // reduction of enemy armour
 }
 
 #[derive(Serialize)]
 enum DivisionLocation {
     City(CityId),
     Travel {
-        vertex_id: PlanetVertexId,
+        planet_vertex_id: PlanetVertexId,
         moved: f32, // percentage moved to next
-        path: Vec<u8>,
+        path: Vec<VertexId>,
+    },
+    Retreat {
+        planet_vertex_id: PlanetVertexId,
+        moved: f32, // percentage moved to dest
+        dest: u8,
     },
     InTransport, // TODO attach transport id
 }
 
+#[derive(Serialize)]
+enum DivisionLocation2 {
+    AtPlanet(PlanetId),
+    InTransport, // TODO attach transport id
+}
+
+#[derive(Serialize)]
+enum DivisionPlanetMovement {
+    Stay,
+    Travel { path: Vec<u8> },
+    Retreat { dest: u8 },
+}
+
 #[derive(Clone, Serialize)]
 struct PlanetEdge {
-    vertex_idx: u8,
+    vertex_id: VertexId,
     cost: u32,
 }
 
+struct Frontline {
+    is_attacking: bool, // divisions move to new positions and readjust frontline
+    nation_id: NationId,
+    line_vertices: HashSet<usize>,
+    goals: HashSet<usize>, // auto recreate frontline when attacking
+    assigned_divisions: HashSet<DivisionId>,
+}
+
 pub struct Planet {
-    width: u8,
-    height: u8,
     name: String,
     orbit: Orbit,
 
@@ -476,6 +427,8 @@ pub struct Planet {
 
     // Javascript-facing, view topology
     city_coors: Vec<f32>, // each coordinate is a pair of f32 in the vec, i.e (coor[i], coor[i+1]), i divisible by 2
+
+    frontlines: Vec<Frontline>,
 }
 
 // star revolve around the origin
@@ -493,6 +446,19 @@ struct WarGoal {
 #[derive(Default)]
 struct StationedDivisions(Vec<Vec<HashSet<DivisionId>>>);
 
+#[derive(Default)]
+pub struct Wars(Vec<War>);
+
+pub struct LocationIndex(KdTree<f64, Locatable, [f64; 2]>);
+impl Default for LocationIndex {
+    fn default() -> Self {
+        LocationIndex(KdTree::new(2))
+    }
+}
+
+#[derive(Default)]
+pub struct VertexToCityId(Vec<Vec<CityId>>);
+
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Galaxy {
@@ -502,8 +468,8 @@ pub struct Galaxy {
     planets: Vec<Planet>,
     stars: Vec<Star>,
     angles: HashMap<Locatable, f32>,
-    locs: HashMap<Locatable, Point2<f32>>,
-    loc_idx: HashMap<i32, HashSet<Locatable>>,
+    locs: HashMap<Locatable, (f64, f64)>,
+    loc_idx: LocationIndex,
     nations: Vec<Nation>,
     player: Option<SpecialistId>,
     ships: Spacecrafts,
@@ -514,27 +480,29 @@ pub struct Galaxy {
     division_templates: Vec<DivisionTemplate>,
     divisions: Vec<Division>,
     divisions_in_training: HashMap<NationId, HashMap<DivisionId, u8>>, // planet id -> division in training -> training progress
-    divisions_undeployed: HashSet<DivisionId>,                         // trained but not deployed
-    public_divisions: HashSet<DivisionId>,
-    private_divisions: HashSet<DivisionId>,
+    division_locations: HashMap<DivisionId, (f32, f32)>,
 
     // location mappings for divisions
     stationed_divisions: StationedDivisions, // planet_idx -> vertex_idx -> set of stationed divisions
     division_location: HashMap<DivisionId, DivisionLocation>, // implied divisions are deployed
+    vertex_to_divisions: HashMap<PlanetId, HashMap<u8, HashSet<DivisionId>>>,
 
     wars: Vec<War>,
     war_goals: HashMap<NationId, HashMap<NationId, WarGoal>>,
+
+    battles: HashMap<PlanetId, HashMap<u8, HashMap<u8, HashSet<DivisionId>>>>, // planet -> vertices for defending units -> attacking vertices -> attackers
 
     cities: Vec<City>,
 
     // cached view data
     city_graphs: HashMap<PlanetVertexId, CityGraph>,
+    city_graphs2: HashMap<PlanetVertexId, CityGraph>,
 
     // game model's topology
     city_idx_to_vertex_id: Vec<PlanetVertexId>, // city id -> vertex id
 
     // view-to-model translation
-    vertex_idx_to_city_id: Vec<Vec<CityId>>, // planet idx -> vertex idx (view) -> city id (model)
+    vertex_idx_to_city_id: VertexToCityId, // planet idx -> vertex idx (view) -> city id (model)
 }
 
 #[derive(Default)]

@@ -1,9 +1,9 @@
 import * as Hammer from "hammerjs";
-import { distance, subtract, Vec2D } from "myalgo-ts";
-import { SpacecraftKind } from "../../galaxy";
+import { distance, Vec2D } from "myalgo-ts";
 import { ChannelKind, Database, ISubscriber } from "../database";
 import { CanvasOperator } from "./CanvasOperator";
-import { BIG_GRID_FACTOR, MIN_SHOW_GRID_SIZE, TWO_PI } from "./def";
+import { TWO_PI } from "./def";
+import { IDrawGalaxyData } from "./def2";
 
 // tslint:disable-next-line:max-classes-per-file
 export class GalaxyView
@@ -15,6 +15,8 @@ export class GalaxyView
     private updatePanAnimation?: () => boolean;
     private frameRequestId?: number;
     private operator: CanvasOperator;
+
+    private cityImage = new Map<number, [HTMLCanvasElement, number]>(); // planet idx -> (canvas, gridSize)
 
     private shouldUpdateGrid = true;
     private shouldRedrawView = true;
@@ -95,6 +97,7 @@ export class GalaxyView
         if (this.shouldRedrawView &&
             canvas.width !== 0 && canvas.height !== 0
         ) {
+
             ctx.clearRect(0, 0, this.width, this.height);
             ctx.drawImage(this.cachedGrid, 0, 0);
             this.drawObjects();
@@ -123,30 +126,23 @@ export class GalaxyView
         }
     }
 
-    private getOffsetFromTopLeft(e: HammerInput): Vec2D {
-        const bb = e.target.getBoundingClientRect();
-        return [
-            e.center.x - bb.left,
-            e.center.y - bb.top,
-        ];
-    }
-
-    private getOffsetFromCenter(e: HammerInput): Vec2D {
-        return [
+    private doubleClick = (e: HammerInput) => {
+        const vpOffset: Vec2D = [
             e.center.x - this.width / 2,
             e.center.y - this.height / 2,
         ];
-    }
-
-    private doubleClick = (e: HammerInput) => {
-        const vpOffset = this.getOffsetFromCenter(e);
         this.panTo(vpOffset);
     }
 
     private singleClick = (e: HammerInput) => {
-        const vpOffset = this.getOffsetFromTopLeft(e);
+        const bb = e.target.getBoundingClientRect();
+        const vpOffset: Vec2D = [
+            e.center.x - bb.left,
+            e.center.y - bb.top,
+        ];
         const [x, y] = this.operator.toGameCoor(vpOffset);
         const db = this.db;
+        console.log(`game:(${x},${y}), vp:(${vpOffset})`);
         db.handleCoorSearch(x, y);
     }
 
@@ -157,117 +153,23 @@ export class GalaxyView
         this.shouldRedrawView = true;
     }
 
-    private drawPlanet(name: string, coor: Vec2D, radius: number, centerCoor: Vec2D) {
-
+    /**
+     * Set up the affine transformation matrix, so that drawing calls can be done in model coordinates.
+     * Caller is responsible for restoring the context.
+     */
+    private transformByViewData() {
+        const ctx = this.ctx;
         const db = this.db;
         const viewData = db.galaxyViewData;
-        const gridSize = viewData.gridSize;
-        const scaledRadius = radius * gridSize;
 
-        const ctx = this.ctx;
-        ctx.save();
+        // move viewport to the origin (which is the center of the screen, due to easy zooming)
+        ctx.translate(this.width / 2, this.height / 2);
 
-        const vpCoor = this.operator.toVpCoor(coor);
-        const [vpX, vpY] = vpCoor;
+        ctx.scale(viewData.gridSize, viewData.gridSize);
 
-        // draw orbit
-        console.assert(centerCoor !== undefined);
-        const cVpCoor = this.operator.toVpCoor(centerCoor);
-        const cRadius = distance(cVpCoor, vpCoor);
-        const [cVpX, cVpY] = cVpCoor;
-        if (this.isCircleInView(cVpCoor, cRadius)) {
-            ctx.beginPath();
-            ctx.arc(cVpX, cVpY, cRadius, 0, TWO_PI);
-            ctx.stroke();
-        }
-
-        // draw planets
-        if (this.isCircleInView(vpCoor, scaledRadius)) {
-            ctx.beginPath();
-            ctx.arc(vpX, vpY, scaledRadius, 0, TWO_PI);
-            ctx.fill();
-        }
-
-        // draw planet names
-        const metric = ctx.measureText(name);
-        const height = 20; // an estimate
-        const width = metric.width;
-        const tVpX = vpX;
-        const tVpY = vpY - scaledRadius - 5;
-        const testCoor = subtract([tVpX, tVpY], [width / 2, height / 2]);
-        if (this.isRectInView(testCoor, metric.width, height)) {
-            ctx.fillText(name, tVpX, tVpY);
-        }
-
-        ctx.restore();
-    }
-
-    private isCircleInView(vpCoor: Vec2D, radius: number) {
-
-        // use a cheap check by treating the circle as a square
-        const twoR = 2 * radius;
-        const topLeft = subtract(vpCoor, [radius, radius]);
-
-        return this.isRectInView(topLeft, twoR, twoR);
-    }
-
-    private isRectInView(vpCoor: Vec2D, width: number, height: number) {
-
-        // https://stackoverflow.com/a/306332
-        const ax1 = 0;
-        const ay1 = 0;
-        const ax2 = this.width;
-        const ay2 = this.height;
-
-        const [bx1, by1] = vpCoor;
-        const bx2 = bx1 + width;
-        const by2 = by1 + height;
-
-        return ax1 < bx2 && ax2 > bx1 && ay1 < by2 && ay2 > by1;
-    }
-
-    private drawStar(name: string, radiusGame: number, x: number, y: number) {
-        const db = this.db;
-        const viewData = db.galaxyViewData;
-        const gridSize = viewData.gridSize;
-        const ctx = this.ctx;
-
-        const [vpX, vpY] = this.operator.toVpCoor([x, y]);
-
-        const radius = Math.max(1, radiusGame * gridSize);
-
-        ctx.beginPath();
-        ctx.arc(vpX, vpY, radius, 0, TWO_PI);
-        ctx.fill();
-
-        const metric = ctx.measureText(name);
-        const height = 20; // an estimate
-        const width = metric.width;
-        const tVpX = vpX;
-        const tVpY = vpY - radius - 5;
-        const testCoor = subtract([tVpX, tVpY], [width / 2, height / 2]);
-        if (this.isRectInView(testCoor, metric.width, height)) {
-            ctx.fillText(name, tVpX, tVpY);
-        }
-    }
-
-    private drawShip(radiusGame: number, x: number, y: number) {
-        const db = this.db;
-        const viewData = db.galaxyViewData;
-        const gridSize = viewData.gridSize;
-        const ctx = this.ctx;
-
-        const [vpX, vpY] = this.operator.toVpCoor([x, y]);
-
-        const radius = Math.max(1, radiusGame * gridSize);
-
-        if (radius < 1) {
-            return;
-        }
-
-        ctx.beginPath();
-        ctx.arc(vpX, vpY, radius, 0, TWO_PI);
-        ctx.fill();
+        // move to the location that user has panned to
+        const [dox, doy] = viewData.diffFromOrigin;
+        ctx.translate(dox, doy);
     }
 
     private drawObjects() {
@@ -277,137 +179,307 @@ export class GalaxyView
         const gridSize = viewData.gridSize;
 
         // extract boundary and search it in the index
-        const [tlX, tlY] = this.operator.toGameCoor([0, 0]);
-        const [brX, brY] = this.operator.toGameCoor([this.width, this.height]);
+        const topLeft = this.operator.toGameCoor([0, 0]);
+        const bottomRight = this.operator.toGameCoor([this.width, this.height]);
+        const drawData = db.calDrawData(topLeft, bottomRight, gridSize);
 
-        const drawData = db.calDrawData(tlX, tlY, brX, brY, gridSize);
+        this.drawCelestrialObjects(drawData);
+        this.tryDrawCities(drawData);
+    }
+
+    private drawCelestrialObjects(drawData: IDrawGalaxyData) {
+        const db = this.db;
+        const viewData = db.galaxyViewData;
         const ctx = this.ctx;
-
         ctx.save();
-        // star
-        ctx.fillStyle = "yellow";
-        // star label
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        for (const { name, radius, x, y } of drawData.stars) {
-            this.drawStar(name, radius, x, y);
+        this.transformByViewData();
+
+        // scale lines and texts manually so that the size stays constant
+        ctx.lineWidth = 1 / viewData.gridSize;
+        ctx.setLineDash([5 / viewData.gridSize, 3 / viewData.gridSize]);
+        ctx.font = `${Math.ceil(10 / viewData.gridSize)}px san-serifs`;
+
+        {
+            // star
+            ctx.fillStyle = "yellow";
+            // star label
+            ctx.textAlign = "center";
+            ctx.beginPath();
+            for (const { radius, x, y } of drawData.stars) {
+                ctx.arc(x, y, radius, 0, TWO_PI);
+                ctx.closePath();
+            }
+            ctx.fill();
+
+            // draw planet orbits
+            ctx.strokeStyle = "white";
+            for (const { x, y, cx, cy } of drawData.planets) {
+                ctx.beginPath();
+                const orbitRadius = distance([cx, cy], [x, y]);
+                ctx.arc(cx, cy, orbitRadius, 0, TWO_PI);
+                ctx.closePath();
+                ctx.stroke();
+            }
+
+            // draw planets
+            ctx.fillStyle = "green";
+            ctx.beginPath();
+            for (const { radius, x, y } of drawData.planets) {
+                ctx.arc(x, y, radius, 0, TWO_PI);
+                ctx.closePath();
+            }
+            ctx.fill();
+
+            // draw star labels
+            ctx.beginPath();
+            ctx.fillStyle = "yellow";
+            for (const { name, x, y, radius } of drawData.stars) {
+                ctx.fillText(name, x, y - radius - 3);
+            }
+
+            // draw planet labels
+            ctx.beginPath();
+            ctx.fillStyle = "green";
+            for (const { name, x, y, radius } of drawData.planets) {
+                ctx.fillText(name, x, y - radius - 3);
+            }
         }
-
-        // orbit
-        ctx.strokeStyle = "white";
-        ctx.setLineDash([5, 3]);
-
-        // planet
-        ctx.fillStyle = "green";
-
-        // planet label
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        for (const { name, radius, x, y, cx, cy } of drawData.planets) {
-            const coor: Vec2D = [x, y];
-            const centerCoor: Vec2D = [cx, cy];
-            this.drawPlanet(name, coor, radius, centerCoor);
-        }
-
-        for (const { kind, radius, x, y } of drawData.ships) {
-            console.log("{0} {1}", kind, SpacecraftKind[kind]);
-            this.drawShip(radius, x, y);
-        }
-
         ctx.restore();
     }
 
-    private updateCachedGrid() {
-
-        const canvas = this.cachedGrid;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-            throw new Error("cannot create context");
-        }
-
+    private tryDrawCities(drawData: IDrawGalaxyData) {
         const db = this.db;
         const viewData = db.galaxyViewData;
         const gridSize = viewData.gridSize;
-        const center = viewData.center;
 
-        const gridColor = "#0c0c0c";
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        ctx.save();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = gridColor;
-        ctx.translate(0.5, 0.5);
-
-        const [cx, cy] = center;
-
-        // truncate to the nearest integer (every lines on the grid lie on the integers)
-        const x = Math.floor(cx);
-        const y = Math.floor(cy);
-        const [vpX, vpY] = this.operator.toVpCoor([x, y]);
-
-        // draw small grid
-
-        ctx.beginPath();
-
-        if (gridSize >= MIN_SHOW_GRID_SIZE) {
-            // draw all vertical lines
-            const numVert = Math.ceil(this.width / gridSize);
-            let curVpX = vpX % gridSize;
-
-            for (let i = 0; i <= numVert; i++) {
-                ctx.moveTo(curVpX, 0);
-                ctx.lineTo(curVpX, canvas.height);
-                curVpX += gridSize;
-            }
-
-            // draw all horizontal lines
-            const numHori = Math.ceil(this.height / gridSize);
-            let curVpY = vpY % gridSize;
-            for (let i = 0; i <= numHori; i++) {
-                ctx.moveTo(0, curVpY);
-                ctx.lineTo(canvas.width, curVpY);
-                curVpY += gridSize;
-            }
+        const citySize = 1 / 3;
+        if (citySize * viewData.gridSize < 0.5) {
+            return;
         }
 
-        ctx.stroke();
-        ctx.restore();
+        for (const { idx, x, y, radius } of drawData.planets) {
 
-        ctx.save();
-        ctx.translate(0.5, 0.5);
-        if (gridSize >= MIN_SHOW_GRID_SIZE) {
-            ctx.strokeStyle = "#282828";
-        } else {
-            ctx.strokeStyle = gridColor;
-        }
-        {
-            const xBig = x - (x % BIG_GRID_FACTOR);
-            const yBig = y - (y % BIG_GRID_FACTOR);
-            const bigGridSize = BIG_GRID_FACTOR * gridSize;
-            const [vpXBig, vpYBig] = this.operator.toVpCoor([xBig, yBig]);
+            const image = this.cityImage.get(idx);
 
-            ctx.beginPath();
-            const numVert = Math.ceil(this.width / bigGridSize);
-            let curVpX = vpXBig % bigGridSize;
-            for (let i = 0; i <= numVert; i++) {
-                ctx.moveTo(curVpX, 0);
-                ctx.lineTo(curVpX, canvas.height);
-                curVpX += bigGridSize;
+            // try load from cache
+            if (image !== undefined && image[1] === gridSize) {
+                const [canvas] = image;
+                const [vpX, vpY] = this.operator.toVpCoor([x - radius, y - radius]);
+                this.ctx.drawImage(canvas, vpX, vpY);
+                return;
             }
 
-            // draw all horizontal lines
-            const numHori = Math.ceil(this.height / bigGridSize);
-            let curVpY = vpYBig % bigGridSize;
-            for (let i = 0; i <= numHori; i++) {
-                ctx.moveTo(0, curVpY);
-                ctx.lineTo(canvas.width, curVpY);
-                curVpY += bigGridSize;
-            }
+            const cityCanvas = document.createElement("canvas");
+            const ctx = cityCanvas.getContext("2d")!;
+            cityCanvas.width = cityCanvas.height = 2 * radius * gridSize;
 
-            ctx.stroke();
+            ctx.save();
+            {
+                ctx.scale(gridSize, gridSize);
+                ctx.translate(radius, radius);
+                const points = new Float32Array(db.getPlanetVerticesCoors(idx));
+                let k = 0;
+                for (let i = 0; i < points.length; i += 2, ++k) {
+                    const cityX = points[i];
+                    const cityY = points[i + 1];
+
+                    const baseStructureSize = 1;
+
+                    // draw fancy detailed city (when zoomed enough)
+                    if (baseStructureSize >= 1) {
+
+                        const graph = this.db.galaxy.cal_city_graph(idx, k);
+                        const numStructures = graph.num_structures;
+
+                        if (numStructures > 0) {
+
+                            const detailCityPoints = graph.get_points();
+                            const dims = graph.get_dims();
+                            const roads = graph.get_roads();
+
+                            ctx.save();
+                            {
+                                ctx.translate(cityX, cityY);
+
+                                ctx.save();
+                                ctx.lineWidth = 0.1 / gridSize;
+                                {
+                                    ctx.beginPath();
+                                    ctx.shadowColor = "yellow";
+                                    ctx.shadowBlur = 20;
+                                    ctx.strokeStyle = "gray";
+                                    for (let j = 0; j < roads.length; j += 2) {
+                                        console.assert(roads[j] !== roads[j + 1]);
+                                        const uIdx = 2 * roads[j];
+                                        const vIdx = 2 * roads[j + 1];
+                                        console.assert(uIdx !== vIdx);
+                                        const x0 = detailCityPoints[uIdx];
+                                        const y0 = detailCityPoints[uIdx + 1];
+                                        const x1 = detailCityPoints[vIdx];
+                                        const y1 = detailCityPoints[vIdx + 1];
+                                        ctx.moveTo(x0, y0);
+                                        ctx.lineTo(x1, y1);
+                                    }
+                                    ctx.stroke();
+
+                                }
+                                ctx.restore();
+
+                                ctx.beginPath();
+                                ctx.fillStyle = "yellow";
+                                for (let j = 0; j < detailCityPoints.length; j += 2) {
+                                    const structX = detailCityPoints[j];
+                                    const structY = detailCityPoints[j + 1];
+                                    const w = dims[j];
+                                    const h = dims[j + 1];
+                                    ctx.rect(structX, structY, w, h);
+                                }
+                                ctx.fill();
+                            }
+                            ctx.restore();
+                        }
+
+                        graph.free();
+                    }
+                }
+
+                const edges = db.getPlanetEdges(idx);
+                ctx.save();
+                {
+                    ctx.beginPath();
+                    ctx.shadowColor = "yellow";
+                    ctx.shadowBlur = 20;
+                    ctx.strokeStyle = "gray";
+                    ctx.fillStyle = "white";
+                    ctx.lineWidth = 0.5 / gridSize;
+                    for (let i = 0; i < edges.length; i += 2) {
+                        const idx0 = 2 * edges[i];
+                        const idx1 = 2 * edges[i + 1];
+                        const x0 = points[idx0];
+                        const y0 = points[idx0 + 1];
+                        const x1 = points[idx1];
+                        const y1 = points[idx1 + 1];
+
+                        ctx.moveTo(x0, y0);
+                        ctx.lineTo(x1, y1);
+                    }
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                ctx.beginPath();
+                ctx.fillStyle = "white";
+                for (let i = 0; i < points.length; i += 2) {
+                    const cityX = points[i];
+                    const cityY = points[i + 1];
+
+                    ctx.arc(cityX, cityY, citySize, 0, TWO_PI);
+                    ctx.closePath();
+                }
+                ctx.fill();
+            }
+            ctx.restore();
+
+            {
+                this.cityImage.set(idx, [cityCanvas, gridSize]);
+                const [vpX, vpY] = this.operator.toVpCoor([x - radius, y - radius]);
+                this.ctx.drawImage(cityCanvas, vpX, vpY);
+            }
         }
-        ctx.restore();
+    }
+
+    private updateCachedGrid() {
+        /*
+                const canvas = this.cachedGrid;
+                const ctx = canvas.getContext("2d");
+                if (!ctx) {
+                    throw new Error("cannot create context");
+                }
+
+                const db = this.db;
+                const viewData = db.galaxyViewData;
+                const gridSize = viewData.gridSize;
+                const center = viewData.center;
+
+                const gridColor = "#0c0c0c";
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                ctx.save();
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = gridColor;
+                ctx.translate(0.5, 0.5);
+
+                const [cx, cy] = center;
+
+                // truncate to the nearest integer (every lines on the grid lie on the integers)
+                const x = Math.floor(cx);
+                const y = Math.floor(cy);
+                const [vpX, vpY] = this.operator.toVpCoor([x, y]);
+
+                // draw small grid
+
+                ctx.beginPath();
+
+                if (gridSize >= MIN_SHOW_GRID_SIZE) {
+                    // draw all vertical lines
+                    const numVert = Math.ceil(this.width / gridSize);
+                    let curVpX = vpX % gridSize;
+
+                    for (let i = 0; i <= numVert; i++) {
+                        ctx.moveTo(curVpX, 0);
+                        ctx.lineTo(curVpX, canvas.height);
+                        curVpX += gridSize;
+                    }
+
+                    // draw all horizontal lines
+                    const numHori = Math.ceil(this.height / gridSize);
+                    let curVpY = vpY % gridSize;
+                    for (let i = 0; i <= numHori; i++) {
+                        ctx.moveTo(0, curVpY);
+                        ctx.lineTo(canvas.width, curVpY);
+                        curVpY += gridSize;
+                    }
+                }
+
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.translate(0.5, 0.5);
+                if (gridSize >= MIN_SHOW_GRID_SIZE) {
+                    ctx.strokeStyle = "#282828";
+                } else {
+                    ctx.strokeStyle = gridColor;
+                }
+                {
+                    const xBig = x - (x % BIG_GRID_FACTOR);
+                    const yBig = y - (y % BIG_GRID_FACTOR);
+                    const bigGridSize = BIG_GRID_FACTOR * gridSize;
+                    const [vpXBig, vpYBig] = this.operator.toVpCoor([xBig, yBig]);
+
+                    ctx.beginPath();
+                    const numVert = Math.ceil(this.width / bigGridSize);
+                    let curVpX = vpXBig % bigGridSize;
+                    for (let i = 0; i <= numVert; i++) {
+                        ctx.moveTo(curVpX, 0);
+                        ctx.lineTo(curVpX, canvas.height);
+                        curVpX += bigGridSize;
+                    }
+
+                    // draw all horizontal lines
+                    const numHori = Math.ceil(this.height / bigGridSize);
+                    let curVpY = vpYBig % bigGridSize;
+                    for (let i = 0; i <= numHori; i++) {
+                        ctx.moveTo(0, curVpY);
+                        ctx.lineTo(canvas.width, curVpY);
+                        curVpY += bigGridSize;
+                    }
+
+                    ctx.stroke();
+                }
+                ctx.restore();
+                */
     }
 
     private pan = (e: HammerInput) => {

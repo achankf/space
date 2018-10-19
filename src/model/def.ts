@@ -58,7 +58,6 @@ export interface INameSearchResult {
 
 const TICKS_PER_SECOND = get_ticks_per_second();
 export const TICK_PERIOD = 1000 / TICKS_PER_SECOND; // in milliseconds, used in setInterval()
-console.log(TICK_PERIOD);
 
 const productValues = Object
     .keys(Product)

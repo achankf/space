@@ -52,6 +52,15 @@ impl Galaxy {
             }
         })
     }
+
+    pub fn is_at_war_with(&self, my_nation_id: NationId, target_nation_id: NationId) -> bool {
+        self.wars.iter().any(|war| {
+            (war.aggressors.contains_key(&my_nation_id)
+                && war.defenders.contains_key(&target_nation_id))
+                || (war.aggressors.contains_key(&target_nation_id)
+                    && war.defenders.contains_key(&my_nation_id))
+        })
+    }
 }
 
 #[wasm_bindgen]
@@ -129,16 +138,10 @@ impl Galaxy {
         });
     }
 
-    pub fn is_at_war_with(&mut self, my_nation_idx: u16, target_nation_idx: u16) -> bool {
+    pub fn interop_is_at_war_with(&mut self, my_nation_idx: u16, target_nation_idx: u16) -> bool {
         let my_nation_id = NationId::new(self, my_nation_idx);
         let target_nation_id = NationId::new(self, target_nation_idx);
-
-        self.wars.iter().any(|war| {
-            (war.aggressors.contains_key(&my_nation_id)
-                && war.defenders.contains_key(&target_nation_id))
-                || (war.aggressors.contains_key(&target_nation_id)
-                    && war.defenders.contains_key(&my_nation_id))
-        })
+        self.is_at_war_with(my_nation_id, target_nation_id)
     }
 
     pub fn change_access_right(

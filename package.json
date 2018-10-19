@@ -17,8 +17,8 @@
     "author": "Alfred Chan (alfred8844@gmail.com)",
     "devDependencies": {
         "@types/hammerjs": "^2.0.36",
-        "copy-webpack-plugin": "^4.5.2",
-        "gh-pages": "^2.0.0",
+        "copy-webpack-plugin": "^4.5.3",
+        "gh-pages": "^2.0.1",
         "typescript": "^3.1.1",
         "webpack": "^4.20.2",
         "webpack-cli": "^3.1.2",

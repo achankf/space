@@ -11,9 +11,12 @@ use Galaxy;
 use Nation;
 use NationId;
 use Planet;
+use PlanetEdge;
 use PlanetId;
 use PlanetVertexId;
 use StationedDivisions;
+use VertexId;
+use VertexToCityId;
 
 impl DivisionId {
     pub fn new(galaxy: &Galaxy, idx: usize) -> Self {
@@ -52,9 +55,15 @@ impl Index<DivisionTemplateId> for Vec<DivisionTemplate> {
 }
 
 impl CityId {
-    pub fn new(galaxy: &Galaxy, idx: u16) -> Self {
-        assert!(idx < (galaxy.cities.len() as u16));
+    pub fn new(galaxy: &Galaxy, idx: u32) -> Self {
+        assert!((idx as usize) < galaxy.cities.len());
         Self(idx)
+    }
+
+    pub fn from_usize(galaxy: &Galaxy, idx: usize) -> Self {
+        use std::u32::MAX;
+        assert!(idx < (MAX as usize));
+        Self::new(galaxy, idx as u32)
     }
 
     pub fn to_vertex_id(&self, galaxy: &Galaxy) -> PlanetVertexId {
@@ -117,6 +126,12 @@ impl PlanetId {
         assert!(idx < (galaxy.planets.len() as u16));
         Self(idx)
     }
+
+    pub fn from_usize(galaxy: &Galaxy, idx: usize) -> Self {
+        use std::u16::MAX;
+        assert!(idx < (MAX as usize));
+        Self::new(galaxy, idx as u16)
+    }
 }
 
 impl Index<PlanetId> for Vec<Planet> {
@@ -136,21 +151,44 @@ impl IndexMut<PlanetId> for Vec<Planet> {
 }
 
 impl PlanetVertexId {
-    pub fn new(galaxy: &Galaxy, planet_id: PlanetId, vertex_idx: u8) -> Self {
+    pub fn new(galaxy: &Galaxy, planet_id: PlanetId, vertex_id: VertexId) -> Self {
         let planet = &galaxy.planets[planet_id];
-        assert!(vertex_idx < planet.cal_dimension());
+        assert!(vertex_id.to_usize() < planet.num_vertices());
+
         Self {
             planet_id,
-            vertex_idx,
+            vertex_id,
         }
     }
 
+    pub fn from_usize(galaxy: &Galaxy, planet_idx: usize, vertex_idx: usize) -> Self {
+        let planet_id = PlanetId::from_usize(galaxy, planet_idx);
+        let planet = &galaxy.planets[planet_idx];
+        let vertex_id = VertexId::from_usize(vertex_idx);
+        Self::new(galaxy, planet_id, vertex_id)
+    }
+
     pub fn to_city_id(&self, galaxy: &Galaxy) -> CityId {
-        let Self {
+        let &Self {
             planet_id: PlanetId(planet_idx),
-            vertex_idx,
+            vertex_id: VertexId(vertex_idx),
         } = self;
-        galaxy.vertex_idx_to_city_id[*planet_idx as usize][*vertex_idx as usize]
+        galaxy.vertex_idx_to_city_id[*self]
+    }
+}
+
+impl Index<PlanetVertexId> for VertexToCityId {
+    type Output = CityId;
+
+    fn index(
+        &self,
+        PlanetVertexId {
+            planet_id: PlanetId(planet_idx),
+            vertex_id: VertexId(vertex_idx),
+        }: PlanetVertexId,
+    ) -> &Self::Output {
+        let VertexToCityId(data) = self;
+        &data[planet_idx as usize][vertex_idx as usize]
     }
 }
 
@@ -161,7 +199,7 @@ impl Index<PlanetVertexId> for StationedDivisions {
         &self,
         PlanetVertexId {
             planet_id: PlanetId(planet_idx),
-            vertex_idx,
+            vertex_id: VertexId(vertex_idx),
         }: PlanetVertexId,
     ) -> &Self::Output {
         let StationedDivisions(data) = self;
@@ -174,10 +212,31 @@ impl IndexMut<PlanetVertexId> for StationedDivisions {
         &'a mut self,
         PlanetVertexId {
             planet_id: PlanetId(planet_idx),
-            vertex_idx,
+            vertex_id: VertexId(vertex_idx),
         }: PlanetVertexId,
     ) -> &'a mut Self::Output {
         let StationedDivisions(data) = self;
         &mut data[planet_idx as usize][vertex_idx as usize]
+    }
+}
+
+impl VertexId {
+    pub fn from_usize(idx: usize) -> Self {
+        use std::u8::MAX;
+        assert!(idx < (MAX as usize));
+        Self(idx as u8)
+    }
+
+    pub fn to_usize(&self) -> usize {
+        let &Self(idx) = self;
+        idx as usize
+    }
+}
+
+impl Index<VertexId> for Vec<Vec<PlanetEdge>> {
+    type Output = Vec<PlanetEdge>;
+
+    fn index(&self, VertexId(idx): VertexId) -> &Self::Output {
+        &self[idx as usize]
     }
 }
