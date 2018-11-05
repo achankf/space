@@ -22,6 +22,7 @@ ordered-float = "1.0.1"
 delaunator = "0.2.0"
 nalgebra = "0.16.4" 
 rand = "0.5.5"
+lazy_static = "1.1.0"
 kdtree = "0.5.1"
 
 [dependencies.wasm-bindgen]

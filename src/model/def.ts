@@ -10,6 +10,10 @@ export interface IStarId {
     readonly Star: number;
 }
 
+export interface ICityId {
+    readonly City: number;
+}
+
 export interface INationId {
     readonly Nation: number;
 }
@@ -33,6 +37,7 @@ export type Id =
     Partial<
     IPlanetId &
     IStarId &
+    ICityId &
     INationId &
     ICorporationId &
     ISpecialist
@@ -44,7 +49,7 @@ export interface IPlanetInfo {
     readonly height: number;
 }
 
-export type Locatable = IPlanetId & IStarId;
+export type Locatable = Partial<IPlanetId & IStarId & ICityId>;
 
 export interface ISearchResult {
     readonly id: Locatable;
@@ -71,12 +76,12 @@ export function allProducts() {
 
 export function getProductName(product: Product) {
     switch (product) {
+        case Product.Crop: return "Crop";
         case Product.Accessory: return "Accessory";
         case Product.Apparel: return "Apparel";
-        case Product.Crop: return "Crop";
+        case Product.Food: return "Food";
         case Product.Metal: return "Metal";
         case Product.Concrete: return "Concrete";
-        case Product.Supply: return "Supply";
         case Product.Alloy: return "Alloy";
         case Product.Gem: return "Gem";
         case Product.Fuel: return "Fuel";
@@ -84,29 +89,25 @@ export function getProductName(product: Product) {
         case Product.Chemical: return "Chemical";
         case Product.Circuit: return "Circuit";
         case Product.Computer: return "Computer";
-        case Product.Food: return "Food";
         case Product.Medicine: return "Medicine";
         case Product.Furniture: return "Furniture";
         case Product.Vehicle: return "Vehicle";
         case Product.Machine: return "Machine";
         case Product.Tool: return "Tool";
-        case Product.Hull: return "Hull";
-        case Product.Engine: return "Engine";
-        case Product.Weapon: return "Weapon";
-        case Product.Shield: return "Shield";
-        case Product.Armor: return "Armor";
-        case Product.Countermeasure: return "Countermeasure";
-        case Product.Rifle: return "Rifle";
-        case Product.Uniform: return "Uniform";
-        case Product.Saber: return "Saber";
-        case Product.Exoskeleton: return "Exoskeleton";
+        case Product.Drink: return "Drink";
+        case Product.Melee: return "Melee";
+        case Product.Range: return "Range";
+        case Product.Artillery: return "Artillery";
+        case Product.Tank: return "Tank";
+        case Product.PowerArmor: return "PowerArmor";
+        case Product.Logistics: return "Logistics";
         default:
-            throw new Error("not handled");
+            throw new Error("not handled value:" + product);
     }
 }
 
 try {
     allProducts().map((x) => getProductName(x));
 } catch (e) {
-    console.assert(false, "sanity check failed");
+    console.assert(false, "sanity check failed, error: " + e);
 }

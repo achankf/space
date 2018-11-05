@@ -1,21 +1,18 @@
+use constants::CITY_CIRCLE_RADIUS;
+use constants::MAX_STAR_RADIUS;
+use constants::RADIUS_OF_LARGEST_OBJ_SQUARED;
 use kdtree::distance::squared_euclidean;
-use nalgebra::geometry::Point2;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use strsim::normalized_levenshtein;
 use util::is_circle_rect_intersect;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
-use CorporationId;
 use Galaxy;
 use Id;
 use Locatable;
-use LocationIndex;
-use NationId;
 use PlanetId;
 use SpacecraftKind;
 use StarId;
-use RADIUS_OF_LARGEST_OBJ;
-use RADIUS_OF_LARGEST_OBJ_SQUARED;
 
 #[derive(Serialize, Deserialize)]
 pub struct SearchResult {
@@ -42,10 +39,10 @@ pub struct DrawPlanetData {
     idx: u16,
     name: String,
     radius: f32,
-    x: f64,
-    y: f64,
-    cx: f64,
-    cy: f64,
+    x: f32,
+    y: f32,
+    cx: f32,
+    cy: f32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,54 +60,87 @@ pub struct DrawGalaxyData {
     ships: Vec<DrawShipData>,
 }
 
+#[wasm_bindgen]
 impl Galaxy {
-    pub fn search(&self, p1: &Point2<f32>) -> Vec<SearchResult> {
-        /*
-        let x1 = p1.x;
-        let y1 = p1.y;
-        let fx = (x1 / LOC_HASH_FACTOR).floor() as i32;
-        let fy = (y1 / LOC_HASH_FACTOR).floor() as i32;
-        
-        // search the location with an oversized rectangle
-        let startx = fx - 1;
-        let starty = fy - 1;
-        let limitx = fx + 1;
-        let limity = fy + 1;
-        
-        let result = self.search_range_helper(startx, starty, limitx, limity);
-        let result_len = result.len();
-        
-        result
+    pub fn interop_search(&self, x: f64, y: f64) -> JsValue {
+        let ret: Vec<_> = self.search(x, y).collect();
+        JsValue::from_serde(&ret).unwrap()
+    }
+
+    pub fn interop_search_exact(&self, x: f64, y: f64) -> JsValue {
+        let ret = self.search_exact(x, y);
+        JsValue::from_serde(&ret).unwrap()
+    }
+
+    pub fn interop_search_name(&self, name: String) -> JsValue {
+        let ret = self.search_name(&name);
+        JsValue::from_serde(&ret).unwrap()
+    }
+
+    pub fn interop_cal_draw_data(
+        &self,
+        tlx: f64, // top-left x
+        tly: f64, // top-left y
+        brx: f64, // bottom-right x
+        bry: f64, // bottom-right y
+        grid_size: f32,
+    ) -> JsValue {
+        let ret = self.cal_draw_data(tlx, tly, brx, bry, grid_size);
+        JsValue::from_serde(&ret).unwrap()
+    }
+
+    pub fn print_search(&self, x: f64, y: f64) -> Option<String> {
+        self.search_exact(x, y)
+            .and_then(|SearchResult { id, name }| match id {
+                Locatable::Planet(planet_id) => {
+                    let ret = format!("Planet: {}", name);
+                    Some(ret)
+                }
+                Locatable::City(city_id) => {
+                    let city = &self.cities[city_id];
+                    let title = format!("{:=^128}", name);
+                    let ret = format!("{}\n{}", title, city);
+                    Some(ret)
+                }
+                _ => None,
+            })
+    }
+}
+
+impl Galaxy {
+    pub fn search<'a>(&'a self, x: f64, y: f64) -> impl Iterator<Item = SearchResult> + 'a {
+        let largest_radius = MAX_STAR_RADIUS as f64;
+        let largest_radius_squared = largest_radius * largest_radius; // squared
+
+        self.loc_idx
+            .0
+            .within(&[x, y], largest_radius_squared, &squared_euclidean)
+            .expect("not handled")
             .into_iter()
-            // .filter(|id| match id {
-            //     Locatable::Planet(_) | Locatable::Star(_) => true,
-            //     _ => false,
-            // })
-            .fold(Vec::with_capacity(result_len), |mut acc, id| {
+            .filter_map(move |(distance_squared, &id)| {
                 let (name, radius) = match id {
-                    Locatable::Planet(PlanetId(idx)) => {
-                        let planet = &self.planets[idx as usize];
-                        (planet.name.to_string(), planet.orbit.radius)
+                    Locatable::Planet(planet_id) => {
+                        let planet = &self.planets[planet_id];
+                        (planet.name.to_string(), planet.radius)
                     }
-                    Locatable::Star(StarId(idx)) => {
-                        let star = &self.stars[idx as usize];
+                    Locatable::Star(star_id) => {
+                        let star = &self.stars[star_id];
                         (star.name.to_string(), star.radius)
                     }
+                    Locatable::City(id) => (format!("{:?}", id), CITY_CIRCLE_RADIUS),
                 };
-        
-                let p2 = self
-                    .locs
-                    .get(&id)
-                    .expect("search_helper: map object should have a location");
-        
-                let dist = (p2 - p1).norm();
-                if dist <= radius {
-                    acc.push(SearchResult { id, name });
+                let radius = radius as f64;
+                let radius_squared = radius * radius;
+                if distance_squared <= radius_squared {
+                    Some(SearchResult { id, name })
+                } else {
+                    None
                 }
-                acc
             })
-            */
-        Vec::new()
+    }
+
+    pub fn search_exact(&self, x: f64, y: f64) -> Option<SearchResult> {
+        self.search(x, y).into_iter().next()
     }
 
     pub fn search_name(&self, target: &str) -> Vec<NameResult> {
@@ -139,24 +169,22 @@ impl Galaxy {
             .map(|(i, nation)| (Id::Nation(NationId(i)), nation.name.to_string()));
             */
 
-        let all_terms = stars
-            .chain(planets)
-            // .chain(nations)
-            .map(|(id, name)| {
-                let lower = name.to_lowercase();
-                let lev = normalized_levenshtein(&target, &lower);
-                NameItem(NameResult { id, name }, lev)
-            });
-
-        // TODO use collect_into() when it lands
-        let reserve = self.stars.len() + self.planets.len(); // + self.nations.len();
-        let mut matches: Vec<NameItem> = Vec::with_capacity(reserve);
-        for term in all_terms {
-            matches.push(term);
-        }
+        let reserve_size = self.stars.len() + self.planets.len(); // + self.nations.len();
 
         // partial sort in descending order by the Levenshtein distance
-        let mut heap = BinaryHeap::from(matches);
+        let mut heap = BinaryHeap::from({
+            let all_terms = stars
+                .chain(planets)
+                // .chain(nations)
+                .map(|(id, name)| {
+                    let lower = name.to_lowercase();
+                    let lev = normalized_levenshtein(&target, &lower);
+                    NameItem(NameResult { id, name }, lev)
+                });
+            let mut buffer = Vec::with_capacity(reserve_size);
+            buffer.extend(all_terms);
+            buffer
+        });
         let num_take = max_show.min(heap.len());
         let mut ret = Vec::with_capacity(num_take);
         for _ in 0..num_take {
@@ -167,7 +195,7 @@ impl Galaxy {
         ret
     }
 
-    pub fn cal_draw_data_helper(
+    pub fn cal_draw_data(
         &self,
         tlx: f64, // top-left x
         tly: f64, // top-left y
@@ -175,8 +203,6 @@ impl Galaxy {
         bry: f64, // bottom-right y
         grid_size: f32,
     ) -> DrawGalaxyData {
-        let LocationIndex(data) = &self.loc_idx;
-
         // rectangle is not a point
         assert!(tlx < brx);
         assert!(tly < bry);
@@ -191,19 +217,22 @@ impl Galaxy {
         let radius_squared =
             (width * width + height * height).max(RADIUS_OF_LARGEST_OBJ_SQUARED as f64); // radius is the hypotenuse; hence search will overestimate
 
-        data.within(&[cx, cy], radius_squared, &squared_euclidean)
+        self.loc_idx
+            .0
+            .within(&[cx, cy], radius_squared, &squared_euclidean)
             .expect("not handled")
             .into_iter()
             // refine search
             .fold(DrawGalaxyData::default(), |mut acc, (_, &id)| {
                 match id {
-                    Locatable::Star(StarId(idx)) => {
-                        let star = &self.stars[idx as usize];
-                        let (x, y) = self
-                            .locs
-                            .get(&id)
-                            .expect("star must have a location")
-                            .clone();
+                    Locatable::City(_) => {
+                        // handled somewhere else for now
+                    }
+                    Locatable::Star(star_id) => {
+                        let star = &self.stars[star_id];
+                        let (x, y) = star.coor.to_cartesian().to_pair();
+                        let x = x as f64;
+                        let y = y as f64;
 
                         let is_intersect =
                             is_circle_rect_intersect((x, y, star.radius), (tlx, tly, brx, bry));
@@ -219,39 +248,37 @@ impl Galaxy {
                             y,
                         });
                     }
-                    Locatable::Planet(PlanetId(idx)) => {
-                        let planet = &self.planets[idx as usize];
-                        let orbit = &planet.orbit;
+                    Locatable::Planet(planet_id) => {
+                        let planet = &self.planets[planet_id];
+                        let PlanetId(planet_idx) = planet_id;
+                        let planet_radius = planet.radius;
 
                         // TODO this is a hack to reduce the number of results to be serialized
-                        let vp_radius = grid_size * orbit.radius; // stands for viewport radius
+                        let vp_radius = grid_size * planet_radius; // stands for viewport radius
                         if vp_radius < 1.0 {
                             return acc;
                         }
 
-                        let (x, y) = self
-                            .locs
-                            .get(&id)
-                            .expect("star must have a location")
-                            .clone();
+                        let star = &self.stars[planet.star_system];
 
-                        let (cx, cy) = self
-                            .locs
-                            .get(&orbit.center)
-                            .expect("star must have a location")
-                            .clone();
+                        let c = star.coor.to_cartesian();
+                        let (cx, cy) = c.to_pair();
+                        let (x, y) = (planet.coor.to_cartesian() + c).to_pair();
+                        let radius = planet.radius;
 
-                        let is_intersect =
-                            is_circle_rect_intersect((x, y, orbit.radius), (tlx, tly, brx, bry));
+                        let is_intersect = is_circle_rect_intersect(
+                            (x as f64, y as f64, radius),
+                            (tlx, tly, brx, bry),
+                        );
 
                         if !is_intersect {
                             return acc;
                         }
 
                         acc.planets.push(DrawPlanetData {
-                            idx,
+                            idx: planet_idx,
                             name: planet.name.clone(),
-                            radius: orbit.radius,
+                            radius,
                             x,
                             y,
                             cx,

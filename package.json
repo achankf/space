@@ -10,6 +10,7 @@
         "deploy": "gh-pages -d dist",
         "serve": "webpack-dev-server",
         "wasm": "cargo build --target wasm32-unknown-unknown --release && wasm-bindgen target/wasm32-unknown-unknown/release/galaxy.wasm --out-dir .",
+        "wasm-debug": "cargo build --target wasm32-unknown-unknown && wasm-bindgen target/wasm32-unknown-unknown/debug/galaxy.wasm --out-dir .",
         "bundle": "npm run wasm && tsc && webpack --mode=production",
         "tsc": "tsc --watch",
         "test": "echo \"Error: no test specified\" && exit 1"

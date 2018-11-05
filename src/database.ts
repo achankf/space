@@ -158,9 +158,26 @@ export class Database {
     }
     */
 
+    public search_exact(x: number, y: number) {
+        const galaxy = this.galaxy;
+        const results: ISearchResult | null = galaxy.interop_search_exact(x, y);
+
+        if (!results) {
+            return;
+        }
+
+        // results.id.City
+
+        console.log(results);
+    }
+
     public handleCoorSearch(x: number, y: number) {
-        const galaxy2 = this.galaxy;
+        const galaxy = this.galaxy;
+        console.log(galaxy.print_search(x, y));
+        /*
         const results: ISearchResult[] = galaxy2.interop_search(x, y);
+
+        console.log(results);
 
         const unwrapped = results.map((result): INameSearchResult => {
             const id = result.id;
@@ -178,7 +195,12 @@ export class Database {
                         const planetId = id as IPlanetId;
                         this.switchPlanetTab(planetId);
                     } else if (id.Star !== undefined) {
-                        console.log(unwrapped);
+                        const data = unwrapped[0];
+                        console.log(data.id.Star + " " + data.name);
+                        // TODO ignore for now
+                    } else if (id.City !== undefined) {
+                        const data = unwrapped[0];
+                        console.log(data.id.City + " " + data.name);
                         // TODO ignore for now
                     } else {
                         throw new Error("not handled");
@@ -187,9 +209,10 @@ export class Database {
                 break;
             default:
                 this.cacheSearchResult = unwrapped;
-                console.assert(false); // TODO switch to the search panel
+                // TODO switch to the search tab
                 break;
         }
+        */
     }
 
     public get tabs() {
@@ -266,7 +289,7 @@ export class Database {
     }
 
     public tick() {
-        this.galaxy = this.galaxy.cal_next_state();
+        this.galaxy.cal_next_state();
         this.notify(ChannelKind.Galaxy);
     }
 

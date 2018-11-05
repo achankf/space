@@ -3,7 +3,6 @@ use std::hash::Hash;
 use wbg_rand::{Rng, WasmRng};
 use Galaxy;
 use Locatable;
-use Orbit;
 use SortedEdge;
 
 impl<T> SortedEdge<T>
@@ -27,32 +26,6 @@ where
         let &SortedEdge(_, v) = self;
         v
     }
-}
-
-pub(crate) fn cal_star_orbit_coor(orbit_radius: f32, angle: f32) -> (f64, f64) {
-    cal_orbit_coor_helper((0., 0.), orbit_radius, angle)
-}
-
-pub(crate) fn cal_orbit_coor(state: &Galaxy, orbit: &Orbit, angle: f32) -> (f64, f64) {
-    let center = orbit.center;
-    let orbit_radius = orbit.orbit_radius;
-
-    let base_coor = state
-        .locs
-        .get(&center)
-        .expect("orbit's center must have a location");
-
-    return cal_orbit_coor_helper(*base_coor, orbit_radius, angle);
-}
-
-pub(crate) fn cal_orbit_coor_helper(
-    (cx, cy): (f64, f64),
-    orbit_radius: f32,
-    angle: f32,
-) -> (f64, f64) {
-    let (ox, oy) = (orbit_radius * angle.cos(), orbit_radius * angle.sin());
-
-    (cx - ox as f64, cy - oy as f64)
 }
 
 pub fn is_circle_rect_intersect(

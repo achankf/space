@@ -1,46 +1,64 @@
-use std::collections::{HashMap, HashSet};
-use wasm_bindgen::prelude::wasm_bindgen;
-use wbg_rand::{wasm_rng, Rng};
-use {
-    AccessRight, City, CityId, FactionData, Foreign, Galaxy, Locatable, Nation, NationId, Orbit,
-    Planet, PlanetId, PlanetVertexId, Star, StarId, StationedDivisions, VertexId, VertexToCityId,
+use constants::{
     MAX_DIST_BETWEEN_PLANETS, MAX_PLANETS_PER_SYSTEM, MAX_PLANET_RADIUS, MAX_STARS_PER_ORBIT,
     MAX_STAR_RADIUS, MAX_SYSTEM_RADIUS, MIN_DIST_BETWEEN_PLANETS, MIN_PLANETS_PER_SYSTEM,
     MIN_PLANET_RADIUS, MIN_STARS_PER_ORBIT, MIN_STAR_RADIUS, NUM_PLANET_ESTIMATE, NUM_STAR_ORBITS,
     TWO_PI,
+};
+use coor::PolarCoor;
+use std::collections::HashSet;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wbg_rand::{wasm_rng, Rng};
+use {
+    AccessRight, City, CityId, CityIdToVertex, FactionData, Foreign, Galaxy, Nation, NationId,
+    Planet, PlanetId, PlanetVertexId, Star, StarId, StationedDivisions, VertexId, VertexToCityId,
 };
 
 #[wasm_bindgen]
 impl Galaxy {
     pub fn new() -> Self {
         let mut rng = wasm_rng();
-        Self::generate_galaxy(&mut rng)
-            .generate_factions(&mut rng)
-            .update_mappings()
-            .update_locs()
+        let mut ret = Self::generate_galaxy(&mut rng).generate_factions(&mut rng);
+
+        ret.update_mappings();
+        ret.update_locs();
+        ret
     }
 
     pub fn interop_colonize(&mut self, nation_idx: u16, planet_idx: u16, vertex_idx: usize) {
-        let planet_id = PlanetId::new(self, planet_idx);
+        let planet_id = PlanetId::new(&self.planets, planet_idx);
         let vertex_id = VertexId::from_usize(vertex_idx);
-        let vertex_id = PlanetVertexId::new(self, planet_id, vertex_id);
+        let vertex_id = PlanetVertexId::new(&self.planets, planet_id, vertex_id);
         let nation_id = NationId::new(self, nation_idx);
         self.colonize(nation_id, vertex_id);
     }
 }
 
 impl Galaxy {
+    pub fn get_city_coor(&self, city_id: CityId) -> (f32, f32) {
+        let PlanetVertexId {
+            planet_id,
+            vertex_id,
+        } = self.to_vertex_id(city_id);
+        let planet = &self.planets[planet_id];
+
+        // to find the absolute coordinates, add the city's relative coor to the planet's coor
+        let (x0, y0) = planet.get_coor(&self).to_pair();
+        let (x1, y1) = planet.get_city_coor(vertex_id);
+
+        (x0 + x1, y0 + y1)
+    }
+
     pub fn colonize(&mut self, nation_id: NationId, vertex_id: PlanetVertexId) {
         if !self.try_colonize(nation_id, vertex_id) {
             unimplemented!("not handled");
         }
     }
 
-    pub fn try_colonize(&mut self, nation_id: NationId, vertex_id: PlanetVertexId) -> bool {
-        let PlanetVertexId { planet_id, .. } = vertex_id;
+    pub fn try_colonize(&mut self, nation_id: NationId, planet_vertex_id: PlanetVertexId) -> bool {
+        let PlanetVertexId { planet_id, .. } = planet_vertex_id;
 
         let PlanetId(planet_idx) = planet_id;
-        let CityId(city_idx) = vertex_id.to_city_id(self);
+        let CityId(city_idx) = self.vertex_idx_to_city_id[planet_vertex_id];
         let city = &mut self.cities[city_idx as usize];
         if city.owner.is_some() || city.controller.is_some() {
             return false;
@@ -48,53 +66,48 @@ impl Galaxy {
 
         let planet = &self.planets[planet_idx as usize];
 
-        if let Locatable::Star(star_id) = planet.orbit.center {
-            use log;
-            log(&format!(
-                "{:?} (System: {:?}) is colonizing {} (vertex: {:?}, colony: {})",
-                nation_id, star_id, planet.name, vertex_id, city_idx
-            ));
-        } else {
-            unreachable!(
-                "{:?} is not revolving around a star, got {:?}",
-                planet_id, planet.orbit.center
-            );
-        }
+        use log;
+        log(&format!(
+            "{:?} (System: {:?}) is colonizing {} (vertex: {:?}, colony: {})",
+            nation_id, planet.star_system, planet.name, planet_vertex_id, city_idx
+        ));
 
         city.owner = Some(nation_id);
         city.controller = Some(nation_id);
         return true;
     }
 
-    fn update_mappings(mut self) -> Self {
+    fn update_mappings(&mut self) {
         {
             use std::u8::MAX;
-            let num_cities = self.cities.len();
 
             // insert dummy data for random access later
-            self.city_idx_to_vertex_id = vec![
-                PlanetVertexId {
-                    planet_id: PlanetId(0),
-                    vertex_id: VertexId(MAX),
-                };
-                num_cities
-            ];
+            self.city_id_to_vertex_id = CityIdToVertex({
+                let num_cities = self.cities.len();
+                vec![
+                    PlanetVertexId {
+                        planet_id: PlanetId(0),
+                        vertex_id: VertexId(MAX),
+                    };
+                    num_cities
+                ]
+            });
 
             for (planet_idx, planet) in self.planets.iter().enumerate() {
-                use log;
-                log(&format!("{}", planet.num_vertices()));
-                for vertex_idx in 0..planet.num_vertices() {
+                let num_vertices = planet.num_vertices();
+                assert!(num_vertices < (MAX as usize));
+                for vertex_idx in 0..num_vertices {
                     let planet_vertex_id =
-                        PlanetVertexId::from_usize(&self, planet_idx, vertex_idx);
-                    let CityId(city_idx) = self.vertex_idx_to_city_id[planet_vertex_id];
+                        PlanetVertexId::from_usize(&self.planets, planet_idx, vertex_idx);
+                    let city_id = self.vertex_idx_to_city_id[planet_vertex_id];
 
                     let vertex_id = PlanetVertexId::new(
-                        &self,
+                        &self.planets,
                         PlanetId(planet_idx as u16),
                         VertexId::from_usize(vertex_idx),
                     );
 
-                    let entry = &mut self.city_idx_to_vertex_id[city_idx as usize];
+                    let entry = &mut self.city_id_to_vertex_id[city_id];
 
                     // sanity check before filling a valid vertex to a dummy entry
                     let PlanetVertexId {
@@ -108,22 +121,22 @@ impl Galaxy {
             }
 
             // sanity check
-            assert!(self.city_idx_to_vertex_id.iter().all(
-                |&PlanetVertexId {
-                     vertex_id: VertexId(dummy_vertex_idx),
-                     ..
-                 }| dummy_vertex_idx < MAX
-            ));
+            assert!({
+                let CityIdToVertex(mapping) = &self.city_id_to_vertex_id;
+                mapping.iter().all(
+                    |&PlanetVertexId {
+                         vertex_id: VertexId(dummy_vertex_idx),
+                         ..
+                     }| dummy_vertex_idx < MAX,
+                )
+            });
         }
-        self
     }
 
     fn generate_galaxy(rng: &mut impl Rng) -> Self {
         let mut ret = Galaxy {
             stars: Vec::with_capacity(NUM_STAR_ORBITS),
             planets: Vec::with_capacity(NUM_PLANET_ESTIMATE),
-            angles: HashMap::with_capacity(NUM_PLANET_ESTIMATE),
-            locs: HashMap::with_capacity(NUM_PLANET_ESTIMATE),
             stationed_divisions: StationedDivisions(Vec::with_capacity(NUM_PLANET_ESTIMATE)),
             ..Self::default()
         };
@@ -144,11 +157,9 @@ impl Galaxy {
                 ret.stars.push(Star {
                     name: star_name.clone(),
                     radius: rng.gen_range(MIN_STAR_RADIUS, MAX_STAR_RADIUS),
-                    orbit_radius,
+                    coor: PolarCoor::new(orbit_radius, prev_star_angle),
                 });
                 star_id_gen += 1;
-                ret.angles
-                    .insert(Locatable::Star(StarId(star_idx as u16)), prev_star_angle);
 
                 prev_star_angle += parts;
 
@@ -161,21 +172,16 @@ impl Galaxy {
                     prev_planet_radius +=
                         rng.gen_range(MIN_DIST_BETWEEN_PLANETS, MAX_DIST_BETWEEN_PLANETS);
 
-                    let orbit = Orbit {
-                        orbit_radius: prev_planet_radius,
-                        center: Locatable::Star(StarId(star_idx as u16)),
-                        radius: rng.gen_range(MIN_PLANET_RADIUS, MAX_PLANET_RADIUS),
-                    };
                     let name = format!("{0} Planet {1}", star_name, temp_planet_name_gen);
-                    let planet = Planet::new(rng, name, orbit);
+                    let radius = rng.gen_range(MIN_PLANET_RADIUS, MAX_PLANET_RADIUS);
+                    let system_id = StarId::wrap_usize(star_idx);
+                    let angle = rng.gen::<f32>() * TWO_PI;
+                    let coor = PolarCoor::new(prev_planet_radius, angle);
+                    let planet = Planet::new(rng, name, radius, (system_id, coor));
                     let num_vertices = planet.num_vertices();
 
                     ret.planets.push(planet);
                     temp_planet_name_gen += 1;
-
-                    let angle = rng.gen::<f32>() * TWO_PI;
-                    ret.angles
-                        .insert(Locatable::Planet(PlanetId(planet_idx as u16)), angle);
 
                     let StationedDivisions(stationed_divisions_data) = &mut ret.stationed_divisions;
                     stationed_divisions_data.push(vec![Default::default(); num_vertices]);
@@ -221,10 +227,7 @@ impl Galaxy {
                     num_nations
                 ],
                 wars: Default::default(),
-                income_tax: 0.0,
-                inheritance_tax: 0.0,
-                import_tariffs: Default::default(),
-                export_tariffs: Default::default(),
+                tax_rate: 0.0,
                 power: 0,
                 labor: 0,
                 stability: 0,
@@ -272,7 +275,7 @@ impl Galaxy {
             loop {
                 let nation_id = NationId::new(&self, i as u16);
                 let planet_idx = rng.gen_range(0, num_planets);
-                let planet_id = PlanetId::new(&self, planet_idx as u16);
+                let planet_id = PlanetId::new(&self.planets, planet_idx as u16);
                 let num_vertices = self.planets[planet_idx].num_vertices();
                 if num_vertices == 0 {
                     break;
@@ -280,7 +283,7 @@ impl Galaxy {
 
                 let vertex_idx = rng.gen_range(0, num_vertices);
                 let vertex_id = VertexId::from_usize(vertex_idx);
-                let planet_vertex_id = PlanetVertexId::new(&self, planet_id, vertex_id);
+                let planet_vertex_id = PlanetVertexId::new(&self.planets, planet_id, vertex_id);
 
                 if self.try_colonize(nation_id, planet_vertex_id) {
                     break;

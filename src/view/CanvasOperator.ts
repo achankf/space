@@ -27,8 +27,8 @@ export class CanvasOperator {
         const canvasWidth = width / 2;
         const canvasHeight = height / 2;
 
-        const retX = Math.floor((x + cx) * gridSize + canvasWidth);
-        const retY = Math.floor((y + cy) * gridSize + canvasHeight);
+        const retX = (x + cx) * gridSize + canvasWidth;
+        const retY = (y + cy) * gridSize + canvasHeight;
 
         console.assert(Number.isFinite(retX));
         console.assert(Number.isFinite(retY));

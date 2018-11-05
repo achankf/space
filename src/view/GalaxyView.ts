@@ -1,9 +1,12 @@
 import * as Hammer from "hammerjs";
 import { distance, Vec2D } from "myalgo-ts";
+import { get_city_circle_radius } from "../../galaxy";
 import { ChannelKind, Database, ISubscriber } from "../database";
 import { CanvasOperator } from "./CanvasOperator";
 import { TWO_PI } from "./def";
 import { IDrawGalaxyData } from "./def2";
+
+const CITY_CIRCLE_RADIUS = get_city_circle_radius();
 
 // tslint:disable-next-line:max-classes-per-file
 export class GalaxyView
@@ -46,6 +49,7 @@ export class GalaxyView
         gesture.on("pan", this.pan);
 
         this.addEventListener("wheel", this.wheel, { passive: true });
+        this.addEventListener("mousemove", this.mousemove);
 
         this.operator = new CanvasOperator(this, db.galaxyViewData);
 
@@ -153,23 +157,11 @@ export class GalaxyView
         this.shouldRedrawView = true;
     }
 
-    /**
-     * Set up the affine transformation matrix, so that drawing calls can be done in model coordinates.
-     * Caller is responsible for restoring the context.
-     */
-    private transformByViewData() {
-        const ctx = this.ctx;
+    private mousemove = (e: MouseEvent) => {
+        const [x, y] = this.operator.toGameCoor([e.clientX - this.offsetLeft, e.clientY - this.offsetTop]);
         const db = this.db;
-        const viewData = db.galaxyViewData;
-
-        // move viewport to the origin (which is the center of the screen, due to easy zooming)
-        ctx.translate(this.width / 2, this.height / 2);
-
-        ctx.scale(viewData.gridSize, viewData.gridSize);
-
-        // move to the location that user has panned to
-        const [dox, doy] = viewData.diffFromOrigin;
-        ctx.translate(dox, doy);
+        // console.log(this.offsetLeft, this.offsetTop, e.clientX, e.clientY, x, y);
+        // db.search_exact(x, y);
     }
 
     private drawObjects() {
@@ -192,7 +184,18 @@ export class GalaxyView
         const viewData = db.galaxyViewData;
         const ctx = this.ctx;
         ctx.save();
-        this.transformByViewData();
+
+        // Set up the affine transformation matrix, so that drawing calls can be done in model coordinates.
+        {
+            // move viewport to the origin (which is the center of the screen, due to easy zooming)
+            ctx.translate(this.width / 2, this.height / 2);
+
+            ctx.scale(viewData.gridSize, viewData.gridSize);
+
+            // move to the location that user has panned to
+            const [dox, doy] = viewData.diffFromOrigin;
+            ctx.translate(dox, doy);
+        }
 
         // scale lines and texts manually so that the size stays constant
         ctx.lineWidth = 1 / viewData.gridSize;
@@ -252,8 +255,7 @@ export class GalaxyView
         const viewData = db.galaxyViewData;
         const gridSize = viewData.gridSize;
 
-        const citySize = 1 / 3;
-        if (citySize * viewData.gridSize < 0.5) {
+        if (CITY_CIRCLE_RADIUS * viewData.gridSize < 0.5) {
             return;
         }
 
@@ -307,7 +309,7 @@ export class GalaxyView
                                     ctx.beginPath();
                                     ctx.shadowColor = "yellow";
                                     ctx.shadowBlur = 20;
-                                    ctx.strokeStyle = "gray";
+                                    ctx.strokeStyle = "yellow";
                                     for (let j = 0; j < roads.length; j += 2) {
                                         console.assert(roads[j] !== roads[j + 1]);
                                         const uIdx = 2 * roads[j];
@@ -349,7 +351,7 @@ export class GalaxyView
                     ctx.beginPath();
                     ctx.shadowColor = "yellow";
                     ctx.shadowBlur = 20;
-                    ctx.strokeStyle = "gray";
+                    ctx.strokeStyle = "yellow";
                     ctx.fillStyle = "white";
                     ctx.lineWidth = 0.5 / gridSize;
                     for (let i = 0; i < edges.length; i += 2) {
@@ -372,8 +374,7 @@ export class GalaxyView
                 for (let i = 0; i < points.length; i += 2) {
                     const cityX = points[i];
                     const cityY = points[i + 1];
-
-                    ctx.arc(cityX, cityY, citySize, 0, TWO_PI);
+                    ctx.arc(cityX, cityY, CITY_CIRCLE_RADIUS, 0, TWO_PI);
                     ctx.closePath();
                 }
                 ctx.fill();

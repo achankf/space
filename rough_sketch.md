@@ -402,3 +402,6 @@ spacecraft
 map:
 planet
 galaxy
+
+nation parameters:
+trader

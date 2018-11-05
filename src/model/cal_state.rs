@@ -1,27 +1,42 @@
-use cal_orbit_coor;
-use cal_star_orbit_coor;
+use constants::ANGLE_CHANGE;
+use constants::TICKS_PER_SECOND;
 use kdtree::KdTree;
+use product::Product;
+use std::collections::HashMap;
+use units::transporter::TransporterState;
 use wasm_bindgen::prelude::wasm_bindgen;
-use {ANGLE_CHANGE, DivisionId, DivisionLocation, Galaxy, Locatable, LocationIndex, PlanetId, PlanetVertexId, Product, StarId, TWO_PI};
+use VertexId;
+use {
+    CityId, DivisionId, DivisionLocation, Galaxy, Locatable, LocationIndex, PlanetId,
+    PlanetVertexId, StarId,
+};
 
 #[wasm_bindgen]
 impl Galaxy {
-    pub fn cal_next_state(self) -> Self {
-        self.cal_world()
-            .cal_division_training()
-            .update_war_goals()
-            .update_battles()
-            .update_frontlines()
-            .cal_action_queue()
-            .cal_galaxy_movement()
-            .cal_playable_moves()
-            .cal_micro_activities()
-            .cal_economy()
+    pub fn cal_next_state(&mut self) {
+        self.timestamp += 1;
+
+        assert!(TICKS_PER_SECOND == 10); // in case I change it in the future
+
+        match self.timestamp % (TICKS_PER_SECOND as u64) {
+            1 => {
+                self.cal_economy();
+            }
+            _ => {}
+        }
+
+        self.cal_galaxy_movement();
+        self.cal_division_training();
+        self.update_war_goals();
+        self.update_battles();
+        self.update_frontlines();
+        self.cal_unit_movement();
+        self.cal_playable_moves();
     }
 }
 
 impl Galaxy {
-    pub fn update_battles(mut self) -> Self {
+    pub fn update_battles(&mut self) {
         //
 
         /*
@@ -39,10 +54,81 @@ impl Galaxy {
         }
         */
 
-        self
     }
 
-    pub fn update_frontlines(mut self) -> Self {
+    pub fn cal_unit_movement(&mut self) {
+        for transporter in &mut self.transporters {
+            match transporter.state {
+                TransporterState::Move {
+                    src_vertex,
+                    destination,
+                    moved,
+                } => {
+                    // try to move to destination
+                    // when arrived, set state to UnloadGoods
+                }
+                TransporterState::UnloadGoods { current_vertex } => {
+                    // unload everything
+
+                    // set state to Station
+                }
+                TransporterState::Station {
+                    current_vertex,
+                    prev_product_kind,
+                } => {
+                    // find a good neighbour (destination) to trade with, or back to the home city
+                    // set state to LoadGoods
+
+                    // pick a neighbour that is most desperately in need of a type of goods
+                    // i.e. max(demand of city - in stock qty - in-transport qty)
+
+                    let PlanetVertexId {
+                        planet_id,
+                        vertex_id,
+                    } = transporter.home_vertex;
+                    let planet = &self.planets[planet_id];
+                    let neighbours = planet.get_neighbours(vertex_id);
+
+                    let mut max_decficit_score: Option<(
+                        Product,
+                        VertexId,
+                        u32,
+                    )> = None; // product kind, vertex id, score = min(local trade surplus, neighbour deficit)
+
+                    for neighbour_vertex_id in neighbours {
+                        let planet_vertex_id =
+                            PlanetVertexId::new(&self.planets, planet_id, *neighbour_vertex_id);
+                        let &city_id = &self.vertex_idx_to_city_id[planet_vertex_id];
+                        let city = &self.cities[city_id];
+
+                        for (product, deficit_qty) in city.cal_demand_deficits() {
+                            let in_stock_qty = city.industry[product].storage_qty;
+                            let new_score = in_stock_qty.min(deficit_qty);
+                            if let Some((_, _, old_score)) = max_decficit_score {
+                                if new_score > old_score {
+                                    max_decficit_score =
+                                        Some((product, *neighbour_vertex_id, new_score));
+                                }
+                            } else {
+                                max_decficit_score =
+                                    Some((product, *neighbour_vertex_id, new_score));
+                            }
+                        }
+                    }
+                }
+                TransporterState::LoadGoods {
+                    current_vertex,
+                    destination,
+                } => {
+                    // load everything needed by destination
+                    // register transport qty to the destination
+                    // set state to Move
+                }
+            }
+        }
+    }
+
+    pub fn update_frontlines(&mut self) {
         //
         for planet in &mut self.planets {
             //
@@ -50,10 +136,9 @@ impl Galaxy {
                 //
             }
         }
-        self
     }
 
-    pub fn update_war_goals(mut self) -> Self {
+    pub fn update_war_goals(&mut self) {
         for (attacker, goals) in self.war_goals.iter_mut() {
             for (defender, goal) in goals.iter_mut() {
                 if goal.creation_time_left > 0 {
@@ -85,15 +170,13 @@ impl Galaxy {
             });
         }
         self.war_goals.retain(|_, goals| goals.len() > 0);
-
-        self
     }
 
-    pub fn cal_division_training(mut self) -> Self {
+    pub fn cal_division_training(&mut self) {
         const FULLY_TRAINED_DAYS: u8 = 100;
 
         for divisions in self.divisions_in_training.values_mut() {
-            for (id, progress) in divisions.iter_mut() {
+            for (_, progress) in divisions.iter_mut() {
                 *progress += 1;
             }
 
@@ -108,249 +191,35 @@ impl Galaxy {
 
         self.divisions_in_training
             .retain(|_, divisions| !divisions.is_empty());
-
-        self
     }
 
-    pub fn cal_world(mut self) -> Self {
-        /*
-        outline in general, but executed on a per-person basis
-        
-        for every nation
-            handle politics
-                - members bring up issues and vote for them; have cooldown
-                - change leadership
-            handle tariffs and tax
-            handle diplomacy
-                - calculate influence map of techs, military powers, industry
-                - find allies that can pinch smaller guys
-                - blob up until fighting small guys are profitable
-                - start a galactic-scale war for domination (TODO? maybe add alternative victories like science)
-                - try to reinforce borders; prioritize
-        for every colony
-            handle growth
-            handle warfare (choose attack or defend against other colonies)
-            rearrange forces (keep min force on neutral borders, focus the rest on 1 theatre)
-            update tariffs and tax (with cooldown)
-            decide funding among military (public), subsidies (private), civilian (welfare; good for both)
-        
-        overall, this should be
-        
-        for each person
-            do his/her job
-        */
-
-        /*
-        for nation in &self.nations {
-        
+    pub fn cal_economy(&mut self) {
+        for city in self.cities.iter_mut() {
+            city.update_economy();
         }
-        */
-
-        // start with a person
-        // look for opportunities
-        // borrow money and start a business
-
-        /*
-        
-        if company doesn't have any assets (factories, stores) then
-            if competition is low (based on demand and supply)
-                build a factory/store in a sector that the CEO is good at
-            else
-                pick an industry that has the least competition
-        
-        post jobs if available
-        
-        if company is making profits and has enough money to expand
-            estimate which industry has the best profit margins and expand in that direction
-            
-        
-                */
-
-        /*
-        let industry = self.cal_colony_industry();
-        let population = self.cal_population();
-        
-        {
-            let industry_employed = industry * 1000000;
-            let remain_population = if population as u32 >= industry_employed {
-                population as u32 - industry_employed
-            } else {
-                0
-            };
-        
-            let planet = &mut self.planets[0];
-            let tiles = &mut planet.tiles;
-            let extracted_qtys = self.colonies[0]
-                .controlled_tiles
-                .iter()
-                .enumerate()
-                .filter(|&(_, &is_controlled)| is_controlled)
-                .fold(
-                    EnumMap::<Product, u32>::default(),
-                    |mut acc, (tile_idx, _)| {
-                        let tile = &mut tiles.data[tile_idx];
-                        let extractors = remain_population as f64 / 1000000f64;
-                        let extraction_qty = 1.0;
-                        let total_extractor_qty = extractors * extraction_qty;
-        
-                        for (product, base_rate) in tile.base_resource_rates {
-                            // here we guarantee at least 1 unit of raw resource production to bootstrap the game
-                            let total_qty = base_rate as f64 * total_extractor_qty.max(1.0);
-                            acc[product] += total_qty.ceil() as u32;
-                        }
-                        acc
-                    },
-                );
-        
-            let colony = &mut self.colonies[0];
-            for (product, data) in colony.products.iter_mut() {
-                data.qty += extracted_qtys[product];
-            }
-        
-            let mut total_consumption = EnumMap::<Product, u32>::default();
-            let mut total_production = EnumMap::<Product, u32>::default();
-            let base_demands = Product::base_demands();
-            for (product, data) in &colony.products {
-                let production_capacity = data.production_capacity;
-        
-                if production_capacity == 0 {
-                    continue;
-                }
-        
-                let demands = base_demands[product];
-        
-                let (actual_produce_qty, actual_consumption) = match demands
-                    .iter()
-                    .filter(|&(_, &qty)| qty > 0)
-                    .map(|(product, demand_qty)| {
-                        let stock_qty = colony.products[product].qty - total_consumption[product];
-                        stock_qty / demand_qty
-                    })
-                    .min()
-                {
-                    Some(potential_product_qty) => {
-                        let actual_produce_qty = potential_product_qty.min(production_capacity);
-                        let actual_consumption = demands.iter().fold(
-                            EnumMap::<Product, u32>::default(),
-                            |mut acc, (product, unit_consume_qty)| {
-                                acc[product] += unit_consume_qty * actual_produce_qty;
-                                acc
-                            },
-                        );
-                        (actual_produce_qty, actual_consumption)
-                    }
-                    None => (production_capacity, EnumMap::<Product, u32>::default()),
-                };
-        
-                for (product, consume_qty) in actual_consumption {
-                    total_consumption[product] += consume_qty;
-                }
-                total_production[product] += actual_produce_qty;
-            }
-            for (product, consume_qty) in total_consumption {
-                assert!(
-                    colony.products[product].qty >= consume_qty,
-                    "over-consume input materials"
-                );
-                let product_qty = total_production[product];
-                colony.products[product].qty += product_qty - consume_qty; // note: modular arithmetic when right-hand side is "negative", but overall qty should not wrap over to u32::MAX
-            }
-        
-            let civilian_consumption = population as u32;
-            let food_consumption = colony.products[Product::Food].qty.min(civilian_consumption);
-            colony.products[Product::Food].qty -= food_consumption;
-        
-            let total_money = food_consumption as f32;
-            let private_income = total_money * (1.0 - colony.income_tax_rate);
-            colony.private_money += private_income as i32;
-            colony.public_money += (total_money - private_income) as i32;
-        
-            let growth_rate = 0.02; // 2%
-            let days_in_year = 400.0;
-            let growth_daily = growth_rate / days_in_year;
-            for tile in &mut tiles.data {
-                tile.population = tile.population * (1.0 + growth_daily);
-            }
-        }
-        */
-
-        /*
-                for planet in self.planets.iter_mut() {
-                    for colony in planet.colonies.iter_mut() {
-                        // handle population growth
-                        {
-                            // TODO
-        
-                            let max_population = planet.territory as f32;
-        
-                            assert!(colony.population > 0.0);
-                            let growth = colony.population + 1.0; // TODO take development into account
-                            colony.population = growth / (max_population + growth) * max_population;
-                        }
-        
-                        // handle specialist growth
-                        {
-                            let specialist_growth_rate = colony.specialist_growth_rate();
-                            let specialist_points = colony.specialist_points;
-                            let new_specialist_points = {
-                                let next = specialist_points + specialist_growth_rate;
-                                if next < 0.0 {
-                                    0.0
-                                } else if next > 1.0 {
-                                    1.0
-                                } else {
-                                    next
-                                }
-                            };
-        
-                            // enough points, add a new specialist
-                            if new_specialist_points == 1.0 {
-                                colony.specialist_points = 0.0;
-        
-                                let specialist_idx = self.specialists.len();
-                                self.specialists.push(Default::default());
-                                colony.specialist_homes.insert(specialist_idx);
-                            } else {
-                                // otherwise just accumulate the points
-                                colony.specialist_points = new_specialist_points;
-                            }
-                        }
-                    }
-                }
-        */
-        self
     }
 
-    /** Perform other actions that are performed automatically by the game,
-    like corps making actual investements or government constructions */
-    pub fn cal_action_queue(self) -> Self {
-        self
-    }
+    pub fn cal_galaxy_movement(&mut self) {
+        self.planets
+            .iter_mut()
+            .map(|planet| &mut planet.coor)
+            .for_each(|coor| {
+                let (r, θ) = coor.to_pair();
+                let change = ANGLE_CHANGE * 1.0 / r; // futher away, the slower it revolves
+                coor.set_angle(θ + change);
+            });
 
-    pub fn cal_economy(self) -> Self {
-        self.cal_office_buy()
-            .cal_industry_production()
-            .cal_industry_sell()
-            .cal_civilian_consumption()
-    }
-
-    pub fn cal_galaxy_movement(mut self) -> Self {
-        self.angles = self
-            .locs
-            .keys()
-            .into_iter()
-            .map(|id| {
-                let new_angle = {
-                    let &old_angle = self
-                        .angles
-                        .get(&id)
-                        .expect("all planets must have a angle relative to stars");
-                    self.cal_next_angle(id, old_angle)
-                };
-
-                (*id, new_angle)
-            })
-            .collect();
+        /*
+        self.stars
+            .iter_mut()
+            .map(|star| &mut star.coor)
+            .chain(self.planets.iter_mut().map(|planet| &mut planet.coor))
+            .for_each(|coor| {
+                let (r, θ) = coor.to_pair();
+                let change = ANGLE_CHANGE * 1.0 / r; // futher away, the slower it revolves
+                coor.set_angle(θ + change);
+            });
+            */
 
         self.update_locs()
     }
@@ -359,7 +228,7 @@ impl Galaxy {
         false
     }
 
-    pub fn cal_planet_movement(mut self) -> Self {
+    pub fn cal_planet_movement(&mut self) {
         for (division_id, location) in self.division_location.iter_mut() {
             if let DivisionLocation::Travel {
                 planet_vertex_id,
@@ -378,12 +247,10 @@ impl Galaxy {
                 // let distance
             }
         }
-
-        self
     }
 
     /** Set ai people's actions that can be performed by the player */
-    pub fn cal_playable_moves(self) -> Self {
+    pub fn cal_playable_moves(&self) {
         /*
         for specialist in &self.specialists {
             match specialist.job {
@@ -496,251 +363,40 @@ impl Galaxy {
         //      - change in government policies
         //          - tax, tariffs
 
-        self
     }
 
-    pub fn update_locs(mut self) -> Self {
-        self.locs.clear();
-
+    pub fn update_locs(&mut self) {
         // insert order is important
-
-        for (i, star) in self.stars.iter().enumerate() {
-            let id = Locatable::Star(StarId(i as u16));
-            let &angle = self
-                .angles
-                .get(&id)
-                .expect("all stars must have a angle relative to the origin");
-            let new_coor = cal_star_orbit_coor(star.orbit_radius, angle);
-            self.locs.insert(id, new_coor);
-        }
-
-        for (i, planet) in self.planets.iter().enumerate() {
-            let id = Locatable::Planet(PlanetId(i as u16));
-            let &angle = self
-                .angles
-                .get(&id)
-                .expect("all planets must have a angle relative to stars");
-            let new_coor = cal_orbit_coor(&self, &planet.orbit, angle);
-            self.locs.insert(id, new_coor);
-        }
 
         // recreate index
 
         let size_hint = {
-            let LocationIndex(old) = self.loc_idx;
+            let LocationIndex(old) = &self.loc_idx;
             old.size()
         };
 
-        let mut loc_idx = KdTree::new_with_capacity(2, size_hint.max(1000));
+        self.loc_idx = LocationIndex({
+            let mut temp = KdTree::new_with_capacity(2, size_hint.max(1000));
 
-        for (&id, &(x, y)) in &self.locs {
-            loc_idx.add([x as f64, y as f64], id).unwrap();
-        }
-
-        self.loc_idx = LocationIndex(loc_idx);
-
-        self
-    }
-
-    pub fn cal_micro_activities(self) -> Self {
-        self
-    }
-}
-
-impl Galaxy {
-    fn cal_civilian_consumption(mut self) -> Self {
-        // simply take goods away from the market storage, with a catch:
-        // the zone that has the highest development take first
-
-        /*
-        for planet in self.planets.iter_mut() {
-            for colony in planet.colonies.iter_mut() {
-                let demands = colony.cal_civilian_demands();
-                let mut consumed: ProductMapU = Default::default();
-        
-                // buy (simply take away) goods from the market
-                for (demand_product, demand_qty) in demands {
-                    let products = &mut colony.products[demand_product];
-                    let qty_in_stock = products.qty;
-                    let qty_consumed = qty_in_stock.min(demand_qty);
-                    products.qty -= qty_consumed;
-                    consumed[demand_product] += qty_consumed;
-                }
-        
-                // TODO update consumption stats for the colony
+            for (i, star) in self.stars.iter().enumerate() {
+                let (x, y) = star.coor.to_cartesian().to_pair();
+                let id = Locatable::Star(StarId::wrap_usize(i));
+                temp.add([x as f64, y as f64], id).unwrap();
             }
-        }
-        */
 
-        self
-    }
-
-    // TODO use relay storage when running out of storage
-    fn cal_industry_production(mut self) -> Self {
-        let all_base_demands = Product::base_demands();
-
-        /*
-                for planet in self.planets.iter_mut() {
-                    for colony in planet.colonies.iter_mut() {
-                        // produce products for all corporations based on their production distribution
-                        for &office_idx in &colony.offices {
-                            let office = &mut self.offices[office_idx];
-        
-                            let storage = &mut office.storage;
-                            for (produce_product, ref params) in office
-                                .products
-                                .iter()
-                                .filter(|&(_, params)| params.production_capacity > 0)
-                            {
-                                let production_capacity = params.production_capacity;
-                                let base_demands = all_base_demands[produce_product];
-        
-                                let actual_qty = {
-                                    // the number that can be produced given enough industrial capacity
-                                    let potential_qty = base_demands
-                                        .iter()
-                                        .map(|(input_product, &unit_factor)| {
-                                            if unit_factor > 0 {
-                                                storage[input_product].qty / unit_factor
-                                            } else {
-                                                use std::u32::MAX;
-                                                MAX // infinity, no need to consume resources
-                                            }
-                                        }).min();
-        
-                                    match potential_qty {
-                                        Some(potential_qty) => potential_qty.min(production_capacity),
-                                        None => production_capacity,
-                                    }
-                                };
-        
-                                // consume input products, then produce output products
-                                for (input_product, unit_factor) in base_demands {
-                                    let stored_qty = storage[input_product].qty;
-                                    let consume_qty = actual_qty * unit_factor;
-                                    assert!(stored_qty >= consume_qty);
-                                    storage[input_product].qty = stored_qty - consume_qty;
-                                }
-        
-                                storage[produce_product].qty += actual_qty;
-                            }
-                        }
-                    }
-                }
-        */
-
-        self
-    }
-
-    fn cal_office_buy(mut self) -> Self {
-        /*
-        for planet in self.planets.iter_mut() {
-            for colony in planet.colonies.iter_mut() {
-                let market = colony.market_storage;
-        
-                // TODO rank industry
-                for &office_idx in &colony.offices {
-                    let office = &mut self.offices[office_idx];
-                    let demands = office.cal_total_demands();
-                    let storage = &mut office.storage;
-        
-                    for (product, demand_qty) in demands {
-                        let bought = {
-                            let market_qty = market[product];
-                            market_qty.min(demand_qty)
-                        };
-        
-                        storage[product].qty += bought;
-        
-                        // TODO transfer money to the market
-                    }
-                }
+            for (i, planet) in self.planets.iter().enumerate() {
+                let (x, y) = planet.get_coor(&self).to_pair();
+                let id = Locatable::Planet(PlanetId::wrap_usize(i));
+                temp.add([x as f64, y as f64], id).unwrap();
             }
-        }
-        */
 
-        self
-    }
-
-    fn cal_industry_sell(mut self) -> Self {
-        /*
-        for planet in self.planets.iter_mut() {
-            for colony in planet.colonies.iter_mut() {
-                let mut market = colony.market_storage;
-                let potential_demands = colony.cal_civilian_demands();
-        
-                for &office_idx in &colony.offices {
-                    let office = &mut self.offices[office_idx];
-        
-                    for (product, storage_params) in office
-                        .storage
-                        .iter_mut()
-                        .filter(|(_, params)| params.qty > 0)
-                    {
-                        let potential = potential_demands[product];
-                        let in_stock = market[product];
-                        let is_market_full = potential <= in_stock;
-                        let qty = storage_params.qty;
-        
-                        let (sold, storage_decrease) = match storage_params.strategy {
-                            TradeStrategy::Hold => (0, 0),     // no change
-                            TradeStrategy::Dump => (qty, qty), // all goods in storage goes to the market
-                            TradeStrategy::Free => {
-                                if is_market_full {
-                                    (0, 0)
-                                } else {
-                                    let sold = {
-                                        let needs = potential - in_stock;
-                                        needs.min(qty)
-                                    };
-                                    (sold, sold)
-                                }
-                            }
-                            TradeStrategy::Destroy => {
-                                if is_market_full {
-                                    (0, qty) // destroy remaining goods in storage, nothing sold
-                                } else {
-                                    let sold = {
-                                        let needs = potential - in_stock;
-                                        needs.min(qty)
-                                    };
-                                    (sold, qty) // all goods must be cleared regardless how much were sold
-                                }
-                            }
-                        };
-        
-                        assert!(qty >= storage_decrease);
-                        assert!(market[product] >= sold);
-                        assert!(storage_decrease >= sold); // no magic
-        
-                        storage_params.qty -= storage_decrease;
-                        market[product] += sold;
-        
-                        // TODO update corp's money balance
-                    }
-                }
+            for (i, city) in self.cities.iter().enumerate() {
+                let id = CityId::from_usize(&self, i);
+                let (x, y) = self.get_city_coor(id);
+                temp.add([x as f64, y as f64], Locatable::City(id)).unwrap();
             }
-        }
-        */
 
-        self
-    }
-
-    fn cal_next_angle(&self, id: &Locatable, old_angle: f32) -> f32 {
-        let orbit_radius = match *id {
-            Locatable::Planet(PlanetId(idx)) => {
-                let planet = &self.planets[idx as usize];
-                planet.orbit.orbit_radius
-            }
-            Locatable::Star(StarId(idx)) => {
-                let star = &self.stars[idx as usize];
-                star.orbit_radius
-            }
-            _ => return old_angle,
-        };
-
-        let change = ANGLE_CHANGE * 1.0 / orbit_radius; // orbit_radius.powf(2.0); // futher away, the slower it revolves
-
-        (old_angle + change) % TWO_PI
+            temp
+        });
     }
 }

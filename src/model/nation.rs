@@ -32,10 +32,10 @@ impl Galaxy {
     pub fn can_nation_enter(
         &self,
         nation_id: NationId,
-        vertex_id: PlanetVertexId,
+        planet_vertex_id: PlanetVertexId,
         is_civilian: bool,
     ) -> bool {
-        let city_id = vertex_id.to_city_id(self);
+        let city_id = self.vertex_idx_to_city_id[planet_vertex_id];
         let city = &self.cities[city_id];
 
         // default is uncolonized

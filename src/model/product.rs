@@ -1,38 +1,97 @@
-use EnumMap;
-use Product;
-use ProductMapU;
+use std::collections::HashMap;
+use std::fmt;
+use std::ops::Add;
+use std::ops::Index;
+use wasm_bindgen::prelude::wasm_bindgen;
 
-impl Product {
-    pub fn base_demands() -> EnumMap<Product, ProductMapU> {
-        enum_map!{
-            Product::Food => enum_map!{Product::Crop => 4, _ => 0},
-            _ =>  EnumMap::default(), // TODO
-        }
+#[wasm_bindgen]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Enum, Serialize, Deserialize)]
+pub enum Product {
+    // basic
+    Crop,  // to chemical
+    Metal, // to vehicles, machines, weapons
+    Gem,   // to accessory, weapons
+    Fuel,  // fuel for spacecraft, power plant
+
+    // intermediate
+    Alloy,    // from metal
+    Fiber,    // from crop
+    Chemical, // to medicine & hull, from crop
+    Circuit,  // to gadget, computer, from alloy
+    Concrete, // for construction
+
+    // common goods
+    Food,
+    Drink,
+    Apparel,   // from fiber
+    Medicine,  // from chemical
+    Computer,  // from circuit
+    Accessory, // from gems
+    Furniture, // from fiber
+    Vehicle,   // from alloy
+
+    // operational
+    Machine, // from alloy and computers, used by industries
+    Tool,    // from metal, used for raw material production
+
+    // land warfare,
+    Melee,
+    Range,
+    Artillery,
+    Tank,
+    PowerArmor,
+    Logistics,
+}
+
+impl fmt::Display for Product {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
+}
 
-    pub fn sum_by_ref(m1: &ProductMapU, m2: &ProductMapU) -> ProductMapU {
-        m2.iter()
-            .fold(EnumMap::default(), |mut acc, (product, m2_qty)| {
-                acc[product] = m1[product] + m2_qty;
-                acc
-            })
+#[derive(Default)]
+pub struct ProductQty(pub HashMap<Product, u32>);
+
+impl Into<HashMap<Product, u32>> for ProductQty {
+    fn into(self) -> HashMap<Product, u32> {
+        self.0
     }
+}
 
-    pub fn sum(mut m1: ProductMapU, m2: &ProductMapU) -> ProductMapU {
-        for (product, qty) in m2 {
-            m1[product] += qty;
-        }
-        m1
+impl From<HashMap<Product, u32>> for ProductQty {
+    fn from(data: HashMap<Product, u32>) -> Self {
+        Self(data)
     }
+}
 
-    pub fn to_raw_u32_arr(v: ProductMapU) -> Vec<u32> {
-        // TODO collect_into()
-        let mut ret = vec![0; v.len()];
+impl ProductQty {
+    pub fn new(data: HashMap<Product, u32>) -> Self {
+        ProductQty(data)
+    }
+}
 
-        for (product, qty) in v {
-            ret[product as usize] = qty;
+impl Index<Product> for ProductQty {
+    type Output = u32;
+
+    fn index(&self, product: Product) -> &Self::Output {
+        &self.0[&product]
+    }
+}
+
+impl Add for ProductQty {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let ProductQty(a) = self;
+        let ProductQty(b) = other;
+
+        let mut ret = a.clone();
+
+        for (product, qty) in b {
+            //
+            *ret.entry(product).or_default() += qty;
         }
-        // v.into_iter().map(|(_, qty)| qty).collect()
-        ret
+
+        ProductQty(ret)
     }
 }

@@ -1,6 +1,8 @@
 #![feature(self_struct_ctor)]
 #![feature(non_ascii_idents)]
 
+#[macro_use]
+extern crate lazy_static;
 extern crate strsim;
 extern crate wasm_bindgen;
 extern crate wbg_rand;
@@ -15,28 +17,33 @@ extern crate ordered_float;
 extern crate rand;
 
 pub mod cal_state;
-mod city;
+pub mod colony;
+pub mod constants;
 pub mod coor;
 pub mod division;
-pub mod equipment;
 pub mod galaxy;
 pub mod id;
 pub mod interop;
 mod kruskal;
+mod mapping;
 pub mod nation;
 pub mod planet;
 mod product;
-mod search;
+pub mod search;
 mod unionfind;
+mod units;
 mod util;
 
+use colony::Industry;
+use coor::PolarCoor;
 use enum_map::EnumMap;
 use kdtree::KdTree;
 use nalgebra::geometry::Point2;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::f32::consts::PI;
+use product::Product;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
-use util::{cal_orbit_coor, cal_star_orbit_coor, distance_point_segment};
+use units::transporter::Transporter;
+use util::distance_point_segment;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
@@ -96,52 +103,10 @@ where
     }
 }
 
-pub type TreeParents<T> = HashMap<T, T>; // one parents for one designated root node
-pub type AllTreeParents<T> = HashMap<T, TreeParents<T>>;
-
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(msg: &str);
-}
-
-const TWO_PI: f32 = 2.0 * PI;
-const ANGLE_CHANGE: f32 = 0.001;
-const TICKS_PER_SECOND: u32 = 10;
-
-const CITY_DIST: f32 = 10.;
-const CITY_DIST_OFFSET: f32 = CITY_DIST / 2.;
-const EDGE_MAX_CITY_DIST: f32 = 2.5 * CITY_DIST;
-
-const CITY_RADIUS_LIMIT: f32 = CITY_DIST / 5.;
-
-const PLANET_CITY_STEP_SIZE: f32 = MIN_PLANET_RADIUS / 0.5;
-const MIN_PLANET_RADIUS: f32 = 5.;
-const MAX_PLANET_RADIUS: f32 = 30.;
-const MIN_STAR_RADIUS: f32 = 20.;
-const MAX_STAR_RADIUS: f32 = 40.;
-const NUM_STAR_ORBITS: usize = 10;
-const MIN_STARS_PER_ORBIT: usize = 4;
-const MAX_STARS_PER_ORBIT: usize = 10;
-const MIN_PLANETS_PER_SYSTEM: usize = 4;
-const MAX_PLANETS_PER_SYSTEM: usize = 10;
-const MIN_DIST_BETWEEN_PLANETS: f32 = 5. * MAX_PLANET_RADIUS + MAX_STAR_RADIUS;
-const MAX_DIST_BETWEEN_PLANETS: f32 = 2. * MIN_DIST_BETWEEN_PLANETS;
-const MAX_SYSTEM_RADIUS: f32 = MAX_PLANETS_PER_SYSTEM as f32 * MAX_DIST_BETWEEN_PLANETS;
-const NUM_PLANET_ESTIMATE: usize = (NUM_STAR_ORBITS * NUM_STAR_ORBITS * 10) as usize;
-
-// any objects' should be less than RADIUS_OF_LARGEST_OBJ, otherwise search functions won't work
-const RADIUS_OF_LARGEST_OBJ: f32 = MAX_STAR_RADIUS;
-const RADIUS_OF_LARGEST_OBJ_SQUARED: f32 = RADIUS_OF_LARGEST_OBJ * RADIUS_OF_LARGEST_OBJ;
-
-#[wasm_bindgen]
-pub fn get_planet_vertex_dist() -> f32 {
-    CITY_DIST
-}
-
-#[wasm_bindgen]
-pub fn get_ticks_per_second() -> u32 {
-    TICKS_PER_SECOND
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
@@ -193,6 +158,9 @@ pub struct SpacecraftId {
     idx: usize,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub struct TransporterId(usize);
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Id {
     Corporation(CorporationId),
@@ -206,39 +174,79 @@ pub enum Id {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum Locatable {
+    City(CityId),
     Planet(PlanetId),
     Star(StarId),
 }
 
-pub struct Orbit {
-    orbit_radius: f32,
-    center: Locatable,
-    radius: f32,
+// roles only have effects when enough facilities support them
+#[derive(Enum)]
+pub enum Role {
+    // tier 0
+    Criminal, // negatively affect society, destroy facilities over time
+    Beggar,   // low consumption, increase instability
+
+    // tier 1, uneducated
+    Unemployed, // normal consumption, but quickly demote to tier 0 roles
+    Pioneer,    // low consumption; act as laborer, artisan and engineer for low population colonies
+    Laborer,    // increase goods production
+
+    // tier 2, require education
+    Engineer,   // increase facility points
+    Teacher,    // increase literacy rate
+    Researcher, // produce research points
+    Police,     // increase safety
+    Doctor,     // increase health
+    Bureaucrat, // increase political power
+
+    // tier 3
+    Elite, // high consumption; effect depends on government type
+
+    // manpower contribution to units
+    Pirate,  // tier 0, contribute to pirate's draftable manpower
+    Trader,  // tier 1, transport goods among cities and planets; not controlled by the player
+    Soldier, // tier 1, basically for "resupplying" military units' HP; controlled by the player
+    Officer, // tier 2, required to organize an army
+}
+
+#[derive(Enum)]
+pub enum Facility {
+    Cottage,   // provide more living space than other facility kind
+    School,    // offer jobs to teachers
+    Lab,       // offer jobs to researchers
+    Police,    // offer jobs to police
+    Hospital,  // offer jobs to doctors
+    Assembly,  // offer jobs to bureaucrats
+    Mansion,   // house more elites
+    Fort,      // add defense to the city
+    Warehouse, // add storage to the city
 }
 
 pub struct City {
-    population: usize,
+    population: u32,
 
-    // factors that affect development
+    // factors that affect development growth
     consumption_lvl: f32,    // civilian consumption
     education_lvl: f32,      // education level
     health_lvl: f32,         // health level
-    happy_lvl: f32,          // happiness level
     safety_lvl: f32,         // safety level
     infrastructure_lvl: f32, // infrastructure level
     energy_lvl: f32,         // energy utilization
     telecom_lvl: f32,
 
+    educated: u32, // uneducated = population - educated
+    role_distribution: EnumMap<Role, usize>,
+    facilities: EnumMap<Facility, usize>,
+    num_facilities: usize,
+    facility_points: usize,
+    industry: Industry,
+
+    development: usize, // capped by population and tech
+
     influence: HashMap<NationId, f32>,
+    tech: EnumMap<TechKind, u32>,
 
-    market: EnumMap<Product, usize>,
-
-    // base_industry: usize,
-    // base_commerce: usize,
-    // industry: usize, // produce goods for civilian consumption & other use, goods based on suburb kind
-    // commerce: usize, // determine usable budgets for civilian consumption
-    industry: [(Product, usize); 1], // product is fixed upon world generation
-    custom_industry: [Option<(Product, usize)>; 1],
+    transporters: Vec<TransporterId>,
 
     owner: Option<NationId>,
     controller: Option<NationId>,
@@ -248,58 +256,6 @@ pub struct City {
 pub struct SortedEdge<T>(T, T)
 where
     T: Copy + Clone + PartialOrd + Ord + PartialEq + Eq + Hash;
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct MeleeVariant {
-    durability: u8,  // how likely that tools don't break
-    reach: u8,       // contribute to initiative in shock phase
-    sharpness: u8,   // contribute to damage
-    consumption: u8, // consumption reduction, with deminishing returns
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct RangeVariant {
-    durability: u8,  // how likely that tools don't break
-    range: u8,       // contribute to initiative in fire phase
-    precision: u8,   // increase damage
-    ammunition: u8,  // determine how many extra shots in fire phase
-    consumption: u8, // consumption reduction, with deminishing returns
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ArtilleryVariant {
-    durability: u8,  // how likely that tools don't break
-    range: u8,       // range advantage determines extra first strikes before combat
-    shell: u8,       // increase damage
-    payload: u8,     // bonus firing rounds
-    consumption: u8, // consumption reduction, with deminishing returns
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct TankVariant {
-    durability: u8,   // how likely that tools don't break
-    armor: u8,        // reduce damage
-    breakthrough: u8, // increase combine arm bonus to division
-    consumption: u8,  // consumption reduction, with deminishing returns
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct PowerArmourVariant {
-    durability: u8,   // how likely that tools don't break
-    armor: u8,        // reduce damage
-    breakthrough: u8, // increase combine arm bonus to division
-    consumption: u8,  // consumption reduction, with deminishing returns
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct LogisticsVariant {
-    durability: u8,   // how likely that tools don't break
-    armor: u8,        // reduce damage
-    capacity: u8,     // bonus cargo space
-    breakthrough: u8, // increase combine arm bonus to division
-    consumption: u8,  // consumption reduction, with deminishing returns
-    mobility: u8,     // bonus speed to division
-}
 
 #[wasm_bindgen]
 #[derive(Serialize, Deserialize)]
@@ -332,27 +288,13 @@ pub trait EquipmentVariant {
     fn sum(&self) -> usize;
 }
 
-pub struct EquipmentStore<T: EquipmentVariant>(BTreeMap<EquipmentKey, HashMap<T, usize>>);
-
-impl<T: EquipmentVariant> Default for EquipmentStore<T> {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
 pub struct Division {
     commander: Option<SpecialistId>,
     template_id: DivisionTemplateId,
     morale: u32,
-    manpower: u32,
-    melee_equipments: EquipmentStore<MeleeVariant>,
-    range_equipments: EquipmentStore<RangeVariant>,
-    artillery_equipments: EquipmentStore<ArtilleryVariant>,
-    tank_equipments: EquipmentStore<TankVariant>,
-    power_armour_equipments: EquipmentStore<PowerArmourVariant>,
-    logistics_equipments: EquipmentStore<LogisticsVariant>,
+    soldiers: HashMap<CityId, u32>,
     experience: u16,
-    cargo: EnumMap<Product, usize>,
+    storage: EnumMap<Product, usize>,
     allegiance: NationId,
 }
 
@@ -393,12 +335,6 @@ enum DivisionLocation {
 }
 
 #[derive(Serialize)]
-enum DivisionLocation2 {
-    AtPlanet(PlanetId),
-    InTransport, // TODO attach transport id
-}
-
-#[derive(Serialize)]
 enum DivisionPlanetMovement {
     Stay,
     Travel { path: Vec<u8> },
@@ -406,7 +342,7 @@ enum DivisionPlanetMovement {
 }
 
 #[derive(Clone, Serialize)]
-struct PlanetEdge {
+pub struct PlanetEdge {
     vertex_id: VertexId,
     cost: u32,
 }
@@ -419,14 +355,20 @@ struct Frontline {
     assigned_divisions: HashSet<DivisionId>,
 }
 
+pub struct PlanetAdjList(Vec<Vec<PlanetEdge>>); // undirected graph
+
 pub struct Planet {
     name: String,
-    orbit: Orbit,
 
-    adj_list: Vec<Vec<PlanetEdge>>, // undirected graph, only keep edges (u,v) where u < v
+    radius: f32,
+    star_system: StarId, // origin
+    coor: PolarCoor,
 
-    // Javascript-facing, view topology
+    adj_list: PlanetAdjList,
+
     city_coors: Vec<f32>, // each coordinate is a pair of f32 in the vec, i.e (coor[i], coor[i+1]), i divisible by 2
+
+    shortest_paths: Vec<Vec<Option<(VertexId, u32)>>>,
 
     frontlines: Vec<Frontline>,
 }
@@ -434,8 +376,8 @@ pub struct Planet {
 // star revolve around the origin
 struct Star {
     name: String,
-    orbit_radius: f32,
     radius: f32,
+    coor: PolarCoor, // origin is (0,0)
 }
 
 struct WarGoal {
@@ -459,16 +401,17 @@ impl Default for LocationIndex {
 #[derive(Default)]
 pub struct VertexToCityId(Vec<Vec<CityId>>);
 
+#[derive(Default)]
+pub struct CityIdToVertex(Vec<PlanetVertexId>);
+
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Galaxy {
+    timestamp: u64,
     swiss_account: HashMap<SpecialistId, f64>,
-    specialists: Vec<Specialist>,
 
     planets: Vec<Planet>,
     stars: Vec<Star>,
-    angles: HashMap<Locatable, f32>,
-    locs: HashMap<Locatable, (f64, f64)>,
     loc_idx: LocationIndex,
     nations: Vec<Nation>,
     player: Option<SpecialistId>,
@@ -493,13 +436,13 @@ pub struct Galaxy {
     battles: HashMap<PlanetId, HashMap<u8, HashMap<u8, HashSet<DivisionId>>>>, // planet -> vertices for defending units -> attacking vertices -> attackers
 
     cities: Vec<City>,
+    transporters: Vec<Transporter>,
 
     // cached view data
     city_graphs: HashMap<PlanetVertexId, CityGraph>,
-    city_graphs2: HashMap<PlanetVertexId, CityGraph>,
 
     // game model's topology
-    city_idx_to_vertex_id: Vec<PlanetVertexId>, // city id -> vertex id
+    city_id_to_vertex_id: CityIdToVertex, // city id -> vertex id
 
     // view-to-model translation
     vertex_idx_to_city_id: VertexToCityId, // planet idx -> vertex idx (view) -> city id (model)
@@ -507,7 +450,6 @@ pub struct Galaxy {
 
 #[derive(Default)]
 struct FactionData {
-    tech: HashMap<TechKind, u32>,
     relationship: HashMap<Faction, i32>,
 
     // ships
@@ -517,54 +459,12 @@ struct FactionData {
     traders: Vec<usize>, // idx of freighter
 }
 
-struct Specialist {
-    name: String,
-    job: Job,
-}
-
-impl Default for Specialist {
-    fn default() -> Self {
-        Specialist {
-            name: "No Name".to_owned(),
-            job: Job::None,
-        }
-    }
-}
-
-pub enum Job {
-    None,
-    CEO(CorporationId),
-    Governor,
-    President,
-    FieldMarshall,
-    General,
-    Manager,
-    Worker,
-    Trader,
-    TransportDriver,
-}
-
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 enum CorpOwner {
     Nation(NationId),
     Colony(ColonyId),
     Corporation(CorporationId),
     Personal(SpecialistId),
-}
-
-#[derive(Default)]
-struct CorporationDerived {
-    operating_map: MinimumSpanningTree<usize>,
-}
-
-struct Corporation {
-    issued_share: u32,
-    name: String,
-    incorporated_nation: NationId,
-    ownership: HashMap<CorpOwner, u32>, // nation, colony, corp, or person -> number of shares
-    faction: FactionData,
-    offices: HashSet<usize>, // set of colonies that the corp operates
-    derived: CorporationDerived,
 }
 
 // TODO automatically store minimum goods for local industries and exports
@@ -742,11 +642,6 @@ pub struct Soldiers {
     pub exoskeleton: u32,
 }
 
-#[derive(Clone)]
-enum ColonyHost {
-    Planet(PlanetId),
-}
-
 #[wasm_bindgen]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -820,11 +715,7 @@ struct Nation {
     foreign: Vec<Foreign>,
     wars: Vec<WarId>,
 
-    // tax
-    income_tax: f32,
-    inheritance_tax: f32,
-    import_tariffs: HashMap<NationId, EnumMap<Product, f32>>,
-    export_tariffs: HashMap<NationId, EnumMap<Product, f32>>,
+    tax_rate: f32,
 
     // values; kind of like EU3's sliders
     power: u8, // 0 means despotism, 255 means democracy; affect who can vote and what position can be voted for; affect legitimacy
@@ -838,52 +729,7 @@ struct Nation {
 
 type ProductMapU = EnumMap<Product, u32>;
 
-#[wasm_bindgen]
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Enum, Serialize, Deserialize)]
-pub enum Product {
-    // raw materials
-    Crop,     // to food, chemical (seasonal high-yield harvest)
-    Metal,    // to vehicles, machines, weapons
-    Gem,      // to accessory, weapons
-    Fuel,     // fuel for spacecraft, power plant
-    Concrete, // for construction, production chain isn't modeled in this game
-    Supply,   // from common goods
-
-    // intermediate
-    Alloy,    // from metal
-    Fiber,    // from crop
-    Chemical, // to medicine & hull, from crop
-    Circuit,  // to gadget, computer, from alloy
-
-    // common goods
-    Food,      // from crops
-    Apparel,   // from fiber
-    Medicine,  // from chemical
-    Computer,  // from circuit
-    Accessory, // from gems
-    Furniture, // from fiber
-    Vehicle,   // from alloy
-
-    // operational
-    Machine, // from alloy and computers, used by industries
-    Tool,    // from metal, used for raw material production
-
-    // spacecraft components
-    Hull,   // from alloy & chemical
-    Engine, // from alloy & gem
-
-    // ship weapons
-    Weapon,         // from alloy and gem
-    Shield,         // from alloy and gem
-    Armor,          // from alloy and gem
-    Countermeasure, // from alloy and gem
-
-    // solder equipments
-    Rifle,       // from alloy
-    Uniform,     // from fiber
-    Saber,       // from alloy & gem; think light saber
-    Exoskeleton, // from chemical & fibers
-}
+pub type ProductQty = EnumMap<Product, u32>;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 enum PlanetKind {
@@ -895,7 +741,7 @@ enum PlanetKind {
 }
 
 // tech increase cost lineary & effectiveness with deminishing returns
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Enum)]
 enum TechKind {
     // spacecraft
     Hull,
@@ -905,22 +751,27 @@ enum TechKind {
     Engine,
     Spacecraft,
 
-    // fleet combat (for admirals)
+    // fleet combat
     SpaceCoordination, // increase #ships in fleet
     SpaceTactics,      // increase flagship influence range (ships perform better within range)
 
-    // solder
+    // planetary warfare
+    Melee,
+    Range,
+    Artillery,
+    Tank,
+    PowerArmor,
 
     // colonization
-    Adaptability(PlanetKind),
-    Construction(PlanetKind), // increase speed of construction
+    Adaptability,
+    Construction, // increase speed of construction
 
     // industry
-    Automation(Product),      // reduce cost of labor
-    EnergySaving(Product),    // reduce energy usage per unit of industrial capacity
-    ResourceSaving(Product),  // reduce resource usage
-    Manufacturing(Product),   // increase throughtput (also use more input resource)
-    SpaceProduction(Product), // reduce penalty for manufacturing in space station
+    Automation,      // reduce cost of labor
+    EnergySaving,    // reduce energy usage per unit of industrial capacity
+    ResourceSaving,  // reduce resource usage
+    Manufacturing,   // increase throughtput (also use more input resource)
+    SpaceProduction, // reduce penalty for manufacturing in space station
 }
 
 #[wasm_bindgen]
@@ -1013,7 +864,6 @@ struct Freighter {
 struct Station {
     space_craft: BaseCraft,
     colony: usize,
-    orbit: Option<Orbit>, // revolve around a star when anchored
     docking_rings: DockingRings,
 }
 

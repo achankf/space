@@ -11,7 +11,6 @@ use DivisionTemplateId;
 use Galaxy;
 use NationId;
 use PlanetVertexId;
-use VertexId;
 use WarId;
 
 #[wasm_bindgen]
@@ -49,16 +48,10 @@ impl Galaxy {
         let division = Division {
             commander: None,
             template_id,
-            manpower: 0,
+            soldiers: Default::default(),
             morale: 0,
-            melee_equipments: Default::default(),
-            range_equipments: Default::default(),
-            artillery_equipments: Default::default(),
-            tank_equipments: Default::default(),
-            power_armour_equipments: Default::default(),
-            logistics_equipments: Default::default(),
             experience: 0,
-            cargo: Default::default(),
+            storage: Default::default(),
             allegiance: nation_id,
         };
 
@@ -100,7 +93,7 @@ impl Galaxy {
             .expect("cannot calculate running stats for undeployed divisions");
 
         let division = &self.divisions[division_id];
-        let pop = division.manpower;
+        let pop = division.soldiers.values().sum();
 
         // TODO adjust parameters with equipment
 
@@ -207,10 +200,10 @@ impl Galaxy {
             &DivisionLocation::City(city_id) => city_id,
             DivisionLocation::Travel {
                 planet_vertex_id, ..
-            } => planet_vertex_id.to_city_id(self),
+            } => self.vertex_idx_to_city_id[*planet_vertex_id],
             DivisionLocation::Retreat {
                 planet_vertex_id, ..
-            } => planet_vertex_id.to_city_id(self),
+            } => self.vertex_idx_to_city_id[*planet_vertex_id],
             DivisionLocation::InTransport => unimplemented!("not handled"),
         }
     }
@@ -224,12 +217,10 @@ impl Galaxy {
         let division = &self.divisions[division_id];
         let division_nation = division.allegiance;
 
-        assert!(
-            !self
-                .divisions_in_training
-                .get(&division_nation)
-                .map_or(false, |divisions| !divisions.contains_key(&division_id))
-        );
+        assert!(!self
+            .divisions_in_training
+            .get(&division_nation)
+            .map_or(false, |divisions| !divisions.contains_key(&division_id)));
 
         assert!(
             controller == division_nation,
@@ -237,7 +228,7 @@ impl Galaxy {
         );
 
         // insert into the mappings (both directions)
-        let vertex_id = city_id.to_vertex_id(&self);
+        let vertex_id = self.to_vertex_id(city_id);
         let no_previous = self.stationed_divisions[vertex_id].insert(division_id);
         assert!(no_previous);
 
@@ -253,7 +244,7 @@ impl Galaxy {
         let PlanetVertexId {
             planet_id: to_planet,
             vertex_id: dest_vertex_id,
-        } = dest_id.to_vertex_id(self);
+        } = self.to_vertex_id(dest_id);
         let division = &self.divisions[division_id];
         let is_civilian = self.division_templates[division.template_id].is_civilian;
 
@@ -262,13 +253,13 @@ impl Galaxy {
             .get(&division_id)
             .expect("cannot move undeployed divisions")
         {
-            DivisionLocation::City(at) => {
-                assert!(*at != dest_id);
+            &DivisionLocation::City(at) => {
+                assert!(at != dest_id);
 
                 let PlanetVertexId {
                     planet_id: from_planet,
                     vertex_id: from_vertex_id,
-                } = at.to_vertex_id(self);
+                } = self.to_vertex_id(at);
 
                 assert!(from_planet == to_planet);
 
@@ -286,7 +277,8 @@ impl Galaxy {
                         "last item (path-in-reverse) must be the from vertex"
                     );
 
-                    let planet_vertex_id = PlanetVertexId::new(self, from_planet, from_vertex_id);
+                    let planet_vertex_id =
+                        PlanetVertexId::new(&self.planets, from_planet, from_vertex_id);
 
                     Some(DivisionLocation::Travel {
                         planet_vertex_id,

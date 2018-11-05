@@ -1,6 +1,7 @@
+use constants::TWO_PI;
 use ordered_float::NotNan;
 use rand::Rng;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 use wbg_rand;
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -19,15 +20,9 @@ impl PolarCoor {
     pub fn new(r: f32, θ: f32) -> Self {
         assert!(!r.is_infinite());
         assert!(!θ.is_infinite());
-        let r = match NotNan::new(r) {
-            Ok(r) => r,
-            Err(msg) => panic!(msg),
-        };
-        let θ = match NotNan::new(θ) {
-            Ok(θ) => θ,
-            Err(msg) => panic!(msg),
-        };
-        PolarCoor { r, θ }
+        let r = NotNan::new(r).unwrap();
+        let θ = NotNan::new(θ).unwrap();
+        Self { r, θ }
     }
 
     pub fn random_point_in_circle(rng: &mut impl Rng, r_limit: f32) -> Self {
@@ -35,7 +30,7 @@ impl PolarCoor {
         use std::f32::consts::PI;
         let θ = rng.gen::<f32>() * 2. * PI;
         let r = r_limit * rng.gen::<f32>().sqrt();
-        PolarCoor::new(r, θ)
+        Self::new(r, θ)
     }
 
     // somehow wbg_rand::wasm_rng isn't treated as rand::Rng...
@@ -44,7 +39,7 @@ impl PolarCoor {
         use std::f32::consts::PI;
         let θ = rng.gen::<f32>() * 2. * PI;
         let r = r_limit * rng.gen::<f32>().sqrt();
-        PolarCoor::new(r, θ)
+        Self::new(r, θ)
     }
 
     pub fn to_cartesian(&self) -> CartesianCoor {
@@ -58,21 +53,26 @@ impl PolarCoor {
         let Self { r, θ } = self;
         (r.into_inner(), θ.into_inner())
     }
+
+    pub fn get_angle(&self) -> f32 {
+        self.θ.into_inner()
+    }
+
+    pub fn set_angle(&mut self, θ: f32) {
+        self.θ = match NotNan::new(θ) {
+            Ok(θ) => θ % TWO_PI,
+            Err(msg) => panic!(msg),
+        };
+    }
 }
 
 impl CartesianCoor {
     pub fn new(x: f32, y: f32) -> Self {
         assert!(!x.is_infinite());
         assert!(!y.is_infinite());
-        let x = match NotNan::new(x) {
-            Ok(x) => x,
-            Err(msg) => panic!(msg),
-        };
-        let y = match NotNan::new(y) {
-            Ok(y) => y,
-            Err(msg) => panic!(msg),
-        };
-        CartesianCoor { x, y }
+        let x = NotNan::new(x).unwrap();
+        let y = NotNan::new(y).unwrap();
+        Self { x, y }
     }
 
     pub fn to_polar(&self, origin: Self) -> PolarCoor {
@@ -88,7 +88,7 @@ impl CartesianCoor {
     }
 
     pub fn norm(&self) -> f32 {
-        let CartesianCoor { x, y } = self;
+        let Self { x, y } = self;
         x.hypot(y.into_inner())
     }
 
@@ -99,14 +99,27 @@ impl CartesianCoor {
 }
 
 impl Sub for CartesianCoor {
-    type Output = CartesianCoor;
+    type Output = Self;
 
-    fn sub(self, other: CartesianCoor) -> CartesianCoor {
-        let CartesianCoor { x: x1, y: y1 } = self;
-        let CartesianCoor { x: x0, y: y0 } = other;
-        CartesianCoor {
+    fn sub(self, other: Self) -> Self {
+        let Self { x: x1, y: y1 } = self;
+        let Self { x: x0, y: y0 } = other;
+        Self {
             x: x1 - x0,
             y: y1 - y0,
+        }
+    }
+}
+
+impl Add for CartesianCoor {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let Self { x: x1, y: y1 } = self;
+        let Self { x: x0, y: y0 } = other;
+        Self {
+            x: x1 + x0,
+            y: y1 + y0,
         }
     }
 }
