@@ -4,13 +4,17 @@ use constants::{
     MIN_PLANET_RADIUS, MIN_STARS_PER_ORBIT, MIN_STAR_RADIUS, NUM_PLANET_ESTIMATE, NUM_STAR_ORBITS,
     TWO_PI,
 };
-use coor::PolarCoor;
+use coor::{CartesianCoor, PolarCoor};
+use enum_map::EnumMap;
 use std::collections::HashSet;
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 use wbg_rand::{wasm_rng, Rng};
+use FleetId;
+use SpacecraftKind;
 use {
-    AccessRight, City, CityId, CityIdToVertex, FactionData, Foreign, Galaxy, Nation, NationId,
-    Planet, PlanetId, PlanetVertexId, Star, StarId, StationedDivisions, VertexId, VertexToCityId,
+    AccessRight, CityId, CityIdToVertex, FactionData, Fleet, FleetAction, FleetData, FleetState,
+    Foreign, Galaxy, Nation, NationId, Planet, PlanetId, PlanetVertexId, Star, StarId,
+    StationedDivisions, TravelTarget, VertexId, VertexToCityId,
 };
 
 #[wasm_bindgen]
@@ -31,6 +35,84 @@ impl Galaxy {
         let nation_id = NationId::new(self, nation_idx);
         self.colonize(nation_id, vertex_id);
     }
+
+    pub fn get_num_nations(&self) -> String {
+        format!("#nations:{}", self.nations.len())
+    }
+
+    pub fn assign_people() {}
+
+    pub fn unassign_people() {}
+
+    pub fn build_spacecraft() {}
+
+    pub fn print_fleets() {}
+
+    pub fn create_fleet(&mut self, x: f32, y: f32, composition_factors: JsValue) -> JsValue {
+        // TODO make fleet spawn in a base (instead of coordinates) and make it docked to start with
+
+        let composition_factors: Vec<u32> = composition_factors.into_serde().unwrap();
+
+        let composition = enum_map!{
+            spacecraft_kind => FleetData {
+                desired_factor: composition_factors[spacecraft_kind as usize],
+                ..Default::default()
+            },
+        };
+
+        let ret = Fleet {
+            composition,
+            cargo: Default::default(),
+            state: FleetState::Ready(CartesianCoor::new(x, y)),
+            actions: Default::default(),
+        };
+
+        let id = FleetId(self.fleets.len());
+        self.fleets.push(ret);
+        JsValue::from_serde(&id).unwrap()
+    }
+
+    pub fn update_fleet_composition(&mut self, fleet_id: JsValue, composition_factors: JsValue) {
+        // assert fleet is docked
+
+        let fleet_id: FleetId = fleet_id.into_serde().unwrap();
+        let composition_factors: Vec<u32> = composition_factors.into_serde().unwrap();
+
+        for (spacecraft_kind, data) in &mut self.fleets[fleet_id].composition {
+            data.desired_factor = composition_factors[spacecraft_kind as usize];
+
+            // TODO release extra spacecrafts
+        }
+    }
+
+    pub fn move_fleet_to_coor(&mut self, fleet_id: JsValue, x: f32, y: f32) {
+        let fleet_id: FleetId = fleet_id.into_serde().unwrap();
+        let fleet = &mut self.fleets[fleet_id];
+        fleet
+            .actions
+            .push_back(FleetAction::Travel(TravelTarget::Coor(CartesianCoor::new(
+                x, y,
+            ))));
+
+        use log;
+        log(&format!("{:?}", fleet.state));
+    }
+
+    pub fn set_fleet_stance() {}
+
+    pub fn set_fleet_operation_range() {}
+
+    pub fn build_space_station_around_planet(planet_idx: usize, radius: f32, θ: f32) {}
+
+    pub fn build_space_station_around_star(star_idx: usize, radius: f32, θ: f32) {}
+
+    pub fn invade_colony() {}
+
+    pub fn colonize_planet() {}
+
+    pub fn add_division() {}
+
+    pub fn group_division() {}
 }
 
 impl Galaxy {
@@ -154,21 +236,15 @@ impl Galaxy {
             for _ in 0..num_stars {
                 let star_idx = ret.stars.len();
                 let star_name = format!("Star {0}", star_id_gen);
-                ret.stars.push(Star {
-                    name: star_name.clone(),
-                    radius: rng.gen_range(MIN_STAR_RADIUS, MAX_STAR_RADIUS),
-                    coor: PolarCoor::new(orbit_radius, prev_star_angle),
-                });
                 star_id_gen += 1;
-
                 prev_star_angle += parts;
 
                 let num_planets = rng.gen_range(MIN_PLANETS_PER_SYSTEM, MAX_PLANETS_PER_SYSTEM);
                 let mut prev_planet_radius = MAX_DIST_BETWEEN_PLANETS;
                 let mut temp_planet_name_gen = 1;
+                let mut planets = Vec::with_capacity(num_planets);
 
                 for _ in 0..num_planets {
-                    let planet_idx = ret.planets.len();
                     prev_planet_radius +=
                         rng.gen_range(MIN_DIST_BETWEEN_PLANETS, MAX_DIST_BETWEEN_PLANETS);
 
@@ -179,6 +255,7 @@ impl Galaxy {
                     let coor = PolarCoor::new(prev_planet_radius, angle);
                     let planet = Planet::new(rng, name, radius, (system_id, coor));
                     let num_vertices = planet.num_vertices();
+                    let planet_id = PlanetId(ret.planets.len() as u16);
 
                     ret.planets.push(planet);
                     temp_planet_name_gen += 1;
@@ -190,13 +267,22 @@ impl Galaxy {
                     let mut city_mapping = Vec::with_capacity(num_vertices);
                     for _ in 0..num_vertices {
                         let city_id = CityId(ret.cities.len() as u32);
-                        ret.cities.push(City::new());
+                        ret.cities.push(Default::default());
                         city_mapping.push(city_id);
                     }
 
                     let VertexToCityId(data) = &mut ret.vertex_idx_to_city_id;
                     data.push(city_mapping);
+
+                    planets.push(planet_id);
                 }
+
+                ret.stars.push(Star {
+                    name: star_name.clone(),
+                    radius: rng.gen_range(MIN_STAR_RADIUS, MAX_STAR_RADIUS),
+                    coor: PolarCoor::new(orbit_radius, prev_star_angle),
+                    planets,
+                });
             }
         }
 
@@ -241,35 +327,6 @@ impl Galaxy {
             });
         }
 
-        // debug
-        /*
-        {
-            let nation_id0 = NationId::new(&self, 0);
-            let nation_id1 = NationId::new(&self, 1);
-            let nation_id2 = NationId::new(&self, 2);
-            let planet_idx = 0;
-            let planet_id = PlanetId::new(&self, planet_idx as u16);
-        
-            for i in 1..9 {
-                let vertex_id = VertexId::from_usize(i);
-                let planet_vertex_id = PlanetVertexId::new(&self, planet_id, vertex_id);
-                self.try_colonize(nation_id2, planet_vertex_id);
-            }
-        
-            let planet_vertex_id = PlanetVertexId::new(&self, planet_id, VertexId(9));
-            self.try_colonize(nation_id0, planet_vertex_id);
-        
-            let planet_vertex_id = PlanetVertexId::new(&self, planet_id, VertexId(10));
-            self.try_colonize(nation_id1, planet_vertex_id);
-        
-            for i in 11..30 {
-                let vertex_id = VertexId::from_usize(i);
-                let planet_vertex_id = PlanetVertexId::new(&self, planet_id, vertex_id);
-                self.try_colonize(nation_id2, planet_vertex_id);
-            }
-        }
-        */
-
         let num_planets = self.planets.len();
         for i in 0..num_nations {
             loop {
@@ -293,51 +350,4 @@ impl Galaxy {
 
         self
     }
-
-    /*
-    pub fn cal_population(&self) -> f64 {
-        let colony = &self.colonies[0];
-        let planet = &self.planets[0];
-    
-        colony
-            .get_controlled_tile_idxs()
-            .iter()
-            .map(|&tile_idx| planet.tiles.data[tile_idx].population)
-            .sum()
-    }
-    
-    pub fn get_neighbour_tiles(&self) -> BTreeMap<NationId, HashSet<usize>> {
-        let colony = &self.colonies[0];
-        let planet = &self.planets[0];
-    
-        colony
-            .get_controlled_tile_idxs()
-            .iter()
-            .flat_map(|&idx| planet.get_neighbours_from_idx(idx))
-            .filter(|&idx| !colony.controlled_tiles[idx])
-            .fold(BTreeMap::default(), |mut acc, tile_idx| {
-                let tile = &planet.tiles.data[tile_idx];
-                if let Some(nation_id) = tile.controller {
-                    acc.entry(nation_id).or_default().insert(tile_idx);
-                }
-                acc
-            })
-    }
-    
-    pub fn get_neighbour_countries(&self) -> HashSet<NationId> {
-        let colony = &self.colonies[0];
-        let planet = &self.planets[0];
-    
-        colony
-            .get_controlled_tile_idxs()
-            .iter()
-            .flat_map(|&idx| planet.get_neighbours_from_idx(idx))
-            .filter(|&idx| !colony.controlled_tiles[idx])
-            .filter_map(|idx| {
-                let tile = &planet.tiles.data[idx];
-                tile.controller
-            })
-            .collect()
-    }
-    */
 }

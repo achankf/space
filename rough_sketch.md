@@ -405,3 +405,42 @@ galaxy
 
 nation parameters:
 trader
+
+create fleet
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

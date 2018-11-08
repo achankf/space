@@ -29,13 +29,13 @@ where
 }
 
 pub fn is_circle_rect_intersect(
-    (cx, cy, radius): (f64, f64, f32),
+    (cx, cy, radius): (f64, f64, f64),
     (tlx, tly, brx, bry): (f64, f64, f64, f64),
 ) -> bool {
     // https://yal.cc/rectangle-circle-intersection-test/
     let dx = cx - tlx.max(cx.min(brx));
     let dy = cy - tly.max(cy.min(bry));
-    let r_squared = radius as f64 * radius as f64;
+    let r_squared = radius * radius;
     (dx * dx + dy * dy) < r_squared
 }
 

@@ -7,8 +7,8 @@ use units::transporter::TransporterState;
 use wasm_bindgen::prelude::wasm_bindgen;
 use VertexId;
 use {
-    CityId, DivisionId, DivisionLocation, Galaxy, Locatable, LocationIndex, PlanetId,
-    PlanetVertexId, StarId,
+    CityId, DivisionId, FleetAction, FleetId, FleetState, Galaxy, Locatable, LocationIndex,
+    PlanetId, PlanetVertexId, StarId, TravelTarget,
 };
 
 #[wasm_bindgen]
@@ -209,7 +209,6 @@ impl Galaxy {
                 coor.set_angle(θ + change);
             });
 
-        /*
         self.stars
             .iter_mut()
             .map(|star| &mut star.coor)
@@ -219,7 +218,41 @@ impl Galaxy {
                 let change = ANGLE_CHANGE * 1.0 / r; // futher away, the slower it revolves
                 coor.set_angle(θ + change);
             });
-            */
+
+        for fleet in &mut self.fleets {
+            fleet.state = match fleet.state {
+                FleetState::Docked(..) => unimplemented!(),
+                FleetState::Ready(cur_location) => {
+                    fleet
+                        .actions
+                        .pop_front()
+                        .map_or(fleet.state, |action| match action {
+                            FleetAction::Travel(target) => FleetState::Travel(cur_location, target),
+                        })
+                }
+                FleetState::Travel(cur_location, target) => {
+                    match target {
+                        TravelTarget::Coor(coor1) => {
+                            let direction = coor1 - cur_location;
+                            let norm = direction.norm();
+                            const SPEED: f32 = 10.5; // TODO should be determined by tech, fuel
+
+                            let next_state = if norm < SPEED {
+                                FleetState::Ready(coor1)
+                            } else {
+                                let unit_vector = direction * (1. / norm);
+                                let next_coor = cur_location + unit_vector * SPEED;
+                                FleetState::Travel(next_coor, target)
+                            };
+
+                            next_state
+                        }
+                        TravelTarget::City(..) => unimplemented!(),
+                    }
+                }
+                _ => unimplemented!(),
+            }
+        }
 
         self.update_locs()
     }
@@ -228,6 +261,7 @@ impl Galaxy {
         false
     }
 
+    /*
     pub fn cal_planet_movement(&mut self) {
         for (division_id, location) in self.division_location.iter_mut() {
             if let DivisionLocation::Travel {
@@ -248,6 +282,7 @@ impl Galaxy {
             }
         }
     }
+            */
 
     /** Set ai people's actions that can be performed by the player */
     pub fn cal_playable_moves(&self) {
@@ -370,33 +405,44 @@ impl Galaxy {
 
         // recreate index
 
-        let size_hint = {
-            let LocationIndex(old) = &self.loc_idx;
-            old.size()
-        };
+        let size_hint =
+            self.stars.len() + self.planets.len() + self.cities.len() + self.fleets.len();
 
         self.loc_idx = LocationIndex({
-            let mut temp = KdTree::new_with_capacity(2, size_hint.max(1000));
+            let mut ret = KdTree::new_with_capacity(2, size_hint.max(1000));
 
             for (i, star) in self.stars.iter().enumerate() {
                 let (x, y) = star.coor.to_cartesian().to_pair();
                 let id = Locatable::Star(StarId::wrap_usize(i));
-                temp.add([x as f64, y as f64], id).unwrap();
+                ret.add([x.into(), y.into()], id).unwrap();
             }
 
             for (i, planet) in self.planets.iter().enumerate() {
                 let (x, y) = planet.get_coor(&self).to_pair();
                 let id = Locatable::Planet(PlanetId::wrap_usize(i));
-                temp.add([x as f64, y as f64], id).unwrap();
+                ret.add([x.into(), y.into()], id).unwrap();
             }
 
-            for (i, city) in self.cities.iter().enumerate() {
+            for (i, _) in self.cities.iter().enumerate() {
                 let id = CityId::from_usize(&self, i);
                 let (x, y) = self.get_city_coor(id);
-                temp.add([x as f64, y as f64], Locatable::City(id)).unwrap();
+                ret.add([x.into(), y.into()], Locatable::City(id)).unwrap();
             }
 
-            temp
+            for (i, fleet) in self.fleets.iter().enumerate() {
+                let coor = match fleet.state {
+                    FleetState::Ready(coor) => Some(coor.to_pair()),
+                    FleetState::Travel(coor, _) => Some(coor.to_pair()),
+                    _ => None,
+                };
+
+                if let Some((x, y)) = coor {
+                    let id = FleetId::from_usize(&self, i);
+                    ret.add([x.into(), y.into()], Locatable::Fleet(id)).unwrap();
+                }
+            }
+
+            ret
         });
     }
 }

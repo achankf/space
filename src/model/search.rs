@@ -7,6 +7,7 @@ use std::collections::BinaryHeap;
 use strsim::normalized_levenshtein;
 use util::is_circle_rect_intersect;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
+use FleetState;
 use Galaxy;
 use Id;
 use Locatable;
@@ -53,11 +54,19 @@ pub struct DrawShipData {
     y: f32,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct DrawFleetData {
+    radius: f32,
+    x: f32,
+    y: f32,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 pub struct DrawGalaxyData {
     planets: Vec<DrawPlanetData>,
     stars: Vec<DrawStarData>,
     ships: Vec<DrawShipData>,
+    fleets: Vec<DrawFleetData>,
 }
 
 #[wasm_bindgen]
@@ -98,7 +107,7 @@ impl Galaxy {
                 }
                 Locatable::City(city_id) => {
                     let city = &self.cities[city_id];
-                    let title = format!("{:=^128}", name);
+                    let title = format!("{:=^132}", name);
                     let ret = format!("{}\n{}", title, city);
                     Some(ret)
                 }
@@ -128,6 +137,7 @@ impl Galaxy {
                         (star.name.to_string(), star.radius)
                     }
                     Locatable::City(id) => (format!("{:?}", id), CITY_CIRCLE_RADIUS),
+                    Locatable::Fleet(id) => (format!("{:?}", id), 1.),
                 };
                 let radius = radius as f64;
                 let radius_squared = radius * radius;
@@ -214,8 +224,16 @@ impl Galaxy {
         // perform a circle search
         let width = brx - tlx;
         let height = bry - tly;
-        let radius_squared =
-            (width * width + height * height).max(RADIUS_OF_LARGEST_OBJ_SQUARED as f64); // radius is the hypotenuse; hence search will overestimate
+        let radius_squared = {
+            let hypotenuse_squared = width * width + height * height;
+
+            // radius = hypotenuse / 2
+            // so, radius squared = hypotenuse squared / 4
+            let radius_squared = hypotenuse_squared / 4.;
+
+            // make sure all objects of different sizes are shown, if zooming too close
+            radius_squared.max(RADIUS_OF_LARGEST_OBJ_SQUARED as f64)
+        };
 
         self.loc_idx
             .0
@@ -225,17 +243,34 @@ impl Galaxy {
             // refine search
             .fold(DrawGalaxyData::default(), |mut acc, (_, &id)| {
                 match id {
+                    Locatable::Fleet(fleet_id) => {
+                        let fleet = &self.fleets[fleet_id];
+                        let (x, y) = match fleet.state {
+                            FleetState::Ready(coor) => coor,
+                            FleetState::Travel(coor, _) => coor,
+                            _ => {
+                                unimplemented!();
+                            }
+                        }
+                        .to_pair();
+
+                        acc.fleets.push(DrawFleetData {
+                            radius: 1.,
+                            x: x.into(),
+                            y: y.into(),
+                        });
+                    }
                     Locatable::City(_) => {
                         // handled somewhere else for now
                     }
                     Locatable::Star(star_id) => {
                         let star = &self.stars[star_id];
                         let (x, y) = star.coor.to_cartesian().to_pair();
-                        let x = x as f64;
-                        let y = y as f64;
 
-                        let is_intersect =
-                            is_circle_rect_intersect((x, y, star.radius), (tlx, tly, brx, bry));
+                        let is_intersect = is_circle_rect_intersect(
+                            (x.into(), y.into(), star.radius.into()),
+                            (tlx, tly, brx, bry),
+                        );
 
                         if !is_intersect {
                             return acc;
@@ -244,8 +279,8 @@ impl Galaxy {
                         acc.stars.push(DrawStarData {
                             name: star.name.clone(),
                             radius: star.radius,
-                            x,
-                            y,
+                            x: x.into(),
+                            y: y.into(),
                         });
                     }
                     Locatable::Planet(planet_id) => {
@@ -267,7 +302,7 @@ impl Galaxy {
                         let radius = planet.radius;
 
                         let is_intersect = is_circle_rect_intersect(
-                            (x as f64, y as f64, radius),
+                            (x.into(), y.into(), radius.into()),
                             (tlx, tly, brx, bry),
                         );
 

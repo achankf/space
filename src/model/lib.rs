@@ -35,10 +35,10 @@ mod units;
 mod util;
 
 use colony::Industry;
+use coor::CartesianCoor;
 use coor::PolarCoor;
 use enum_map::EnumMap;
 use kdtree::KdTree;
-use nalgebra::geometry::Point2;
 use product::Product;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
@@ -113,7 +113,7 @@ extern "C" {
 pub struct CorporationId(usize);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub struct SpecialistId(usize);
+pub struct PeopleId(usize);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct PlanetId(u16);
@@ -133,6 +133,9 @@ pub struct DivisionTemplateId(usize);
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct CityId(u32);
+
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub struct FleetId(usize);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct WarId(usize);
@@ -164,7 +167,7 @@ pub struct TransporterId(usize);
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Id {
     Corporation(CorporationId),
-    Specialist(SpecialistId),
+    Specialist(PeopleId),
     Planet(PlanetId),
     Star(StarId),
     Nation(NationId),
@@ -177,6 +180,7 @@ pub enum Locatable {
     City(CityId),
     Planet(PlanetId),
     Star(StarId),
+    Fleet(FleetId),
 }
 
 // roles only have effects when enough facilities support them
@@ -222,8 +226,26 @@ pub enum Facility {
     Warehouse, // add storage to the city
 }
 
-pub struct City {
+pub enum EducationLevel {
+    Uneducated,
+    Educated,
+    WellEducated,
+    HighlyEducated,
+}
+
+pub struct SocialGroup {
+    role: Role,
+    culture: CityId,
     population: u32,
+    education_level: EducationLevel,
+}
+
+#[derive(Default)]
+pub struct Population(Vec<SocialGroup>);
+
+#[derive(Default)]
+pub struct City {
+    population: Population,
 
     // factors that affect development growth
     consumption_lvl: f32,    // civilian consumption
@@ -235,7 +257,6 @@ pub struct City {
     telecom_lvl: f32,
 
     educated: u32, // uneducated = population - educated
-    role_distribution: EnumMap<Role, usize>,
     facilities: EnumMap<Facility, usize>,
     num_facilities: usize,
     facility_points: usize,
@@ -288,9 +309,28 @@ pub trait EquipmentVariant {
     fn sum(&self) -> usize;
 }
 
+enum DivisionFocus {
+    Normal, // default; if a nation has enough equipments and a sound logistics system, all divisions get the same amount of equipments
+    High,   // division gets reinforced first
+}
+
+impl Default for DivisionFocus {
+    fn default() -> Self {
+        DivisionFocus::Normal
+    }
+}
+
+#[derive(Default)]
+struct DivisionFocii {
+    // melee focus = High by default
+    range: DivisionFocus,
+    armor: DivisionFocus,
+}
+
 pub struct Division {
-    commander: Option<SpecialistId>,
+    commander: Option<PeopleId>,
     template_id: DivisionTemplateId,
+    focii: DivisionFocii,
     morale: u32,
     soldiers: HashMap<CityId, u32>,
     experience: u16,
@@ -319,7 +359,7 @@ pub struct DivisionDamage {
 }
 
 #[derive(Serialize)]
-enum DivisionLocation {
+enum DivisionState {
     City(CityId),
     Travel {
         planet_vertex_id: PlanetVertexId,
@@ -373,11 +413,23 @@ pub struct Planet {
     frontlines: Vec<Frontline>,
 }
 
+pub enum StationKind {
+    Settlement(CityId),
+    Factory(Product),
+}
+
+pub struct Station {
+    revolve_around: Locatable,
+    coor: PolarCoor,
+    city_id: CityId,
+}
+
 // star revolve around the origin
 struct Star {
     name: String,
     radius: f32,
     coor: PolarCoor, // origin is (0,0)
+    planets: Vec<PlanetId>,
 }
 
 struct WarGoal {
@@ -408,15 +460,17 @@ pub struct CityIdToVertex(Vec<PlanetVertexId>);
 #[derive(Default)]
 pub struct Galaxy {
     timestamp: u64,
-    swiss_account: HashMap<SpecialistId, f64>,
+    swiss_account: HashMap<PeopleId, f64>,
 
     planets: Vec<Planet>,
     stars: Vec<Star>,
+    stations: Vec<Station>,
     loc_idx: LocationIndex,
     nations: Vec<Nation>,
-    player: Option<SpecialistId>,
-    ships: Spacecrafts,
+    player: Option<PeopleId>,
     player_nation: usize,
+
+    fleets: Vec<Fleet>,
 
     nation_templates: HashMap<NationId, HashSet<DivisionTemplate>>,
     nation_divisions: HashMap<NationId, HashSet<DivisionId>>,
@@ -427,7 +481,7 @@ pub struct Galaxy {
 
     // location mappings for divisions
     stationed_divisions: StationedDivisions, // planet_idx -> vertex_idx -> set of stationed divisions
-    division_location: HashMap<DivisionId, DivisionLocation>, // implied divisions are deployed
+    // division_location: HashMap<DivisionId, DivisionLocation>, // implied divisions are deployed
     vertex_to_divisions: HashMap<PlanetId, HashMap<u8, HashSet<DivisionId>>>,
 
     wars: Vec<War>,
@@ -451,10 +505,6 @@ pub struct Galaxy {
 #[derive(Default)]
 struct FactionData {
     relationship: HashMap<Faction, i32>,
-
-    // ships
-    design: EnumMap<SpacecraftKind, BaseCraftStructure>,
-    ownership: EnumMap<SpacecraftKind, HashSet<usize>>,
     fleets: Vec<Fleet>,
     traders: Vec<usize>, // idx of freighter
 }
@@ -464,7 +514,7 @@ enum CorpOwner {
     Nation(NationId),
     Colony(ColonyId),
     Corporation(CorporationId),
-    Personal(SpecialistId),
+    Personal(PeopleId),
 }
 
 // TODO automatically store minimum goods for local industries and exports
@@ -480,156 +530,6 @@ impl Default for TradeStrategy {
     fn default() -> Self {
         TradeStrategy::Free
     }
-}
-
-/*
-- usually people have 1 major expertise
-- corps hire managers that have the right expertises
-- every corporations on every colonies have "worker slots" for every types of industry (think Tropico and Civ)
-    - each worker slot represents many workers in real (?) life scale
-    - like managers, workers are named characters
-    - hiring occur once per year (400 turns)
-        - run stable marriage algorithm
-- each company need to set up an office to operate on a colony
-    - the office comes with a small storage
-
-production:
-    - responsible for creating goods to the market
-    - control the supply side of the market
-- resource
-    - produce resources without input materials; tools consumption boost efficiency
-    - raw resources: argriculture (crop), mining (metal, gem), refining (fuel)
-- manufacturing
-    - consume raw materials and secondary products to create finished products; machines consumption boost efficiency
-    - finished products: food, drink, apparel, accessory, furniture, gadget, vehicle, tool, machine
-    - ship & weapon parts
-    - education requirement varies for different products
-    - tools boost resource industries greatly
-    - machines boost manufacturing greatly, but efficient mass-production require high eduction level
-
-service:
-    - control the demand side of the market
-    - consume goods to produce service to its colony
-    - improves the well-being of the colony
-    - generic parameters:
-        - supply
-            - actual # of goods in storage
-        - coverage
-            - the portion of demands that are reachable to buyers
-            - effectively control the max # of items that can be sold
-        - strength
-            - determine how many items that can be sold when the market is saturated (more supply than demand)
-            - companies that have higher ad. ratings can sell more than others, up to the max defined by the coverage and actual supply
-- sales
-    - represent either/both retail or wholesales
-    - serve as point of supply to citizens
-- education
-    - consume computers to produce values
-    - the larger the donation, the larger the shares of research points
-    - professors perform reseach, which randomly generate prestige
-        - high prestige make people more likely to enroll to this school
-        - increase strength
-    - name characters attend college
-        - work as research assistant for free
-        - increase stats upon graduation
-        - increase hiring preference with donated companies
-        - earn "idea" points that can be spend to founding advanced industries
-- health
-    - consume medicine to produce values
-    - split effort between medical research (coverage, immunization) and bioenhancement research (strength, military)
-    - provide immunization to colony, which counter disease outbreak
-- telecom
-    - consume computers to produce values
-    - construct satellites to improve coverage and strength
-    - construct communication stations to link up systems
-        - assume signals move in a straight line (this in universe, I am not a physicist)
-            - basically point-in-circle test
-            - gives possibility of blockades
-        - signal range is affected by techs
-        - companies can order goods only from linked systems
-- construction
-    - consume concretes to produce values
-    - when other companies invest in buildings
-    - increase the rate which colony development reaches its capacity
-        - it takes time for other service industries to build up development levels
-        - construction firms shorten development time
-    - allow to own constructors for space construction
-
-special industries:
-- aerospace
-    - responsible for all aspects of ship research, design, and production
-        - capacity: ships require equipment "points" (weapon, beam, hull, etc.) to be fulfill
-        - theoretical max: the max capacity of components of the ship that can be designed
-        - capacity serves as demands to the respective goods
-        - a functional ship means its components has 100% capacity
-    - high barrier to entry
-        - entry to market must be approved by the national government
-        - then company must build and maintain a shipyard
-    - government can order military ships
-    - companies can order trade ships
-        - maybe some nations pass laws that allow civilian to buy certain military ships
-- IT
-    - consume computer to generate pure profit
-    - highly depend on colony development
-    - highly depend on CEO's skills
-    - each IT company sells 1 idea
-        - multiple companies that sell the same idea would have to compete with each other
-        - competition rules for service industries apply
-    - the entire galaxy shares an "idea" list, which is a number line from 0 to N
-        - N is expanded when a student comes up with an idea
-            - students idea points are shared within an university
-            - students can found startups, which roll a random idea from 0 to N
-                - if the university has enough idea points, the limit of N increases
-            - idea points spread quickly
-*/
-
-#[derive(Default)]
-struct HumanResource {
-    workers: HashSet<usize>, // person id
-}
-
-struct ServiceParams {
-    strength: f32, // advertisement, prestige; factors that affect preference
-    coverage: f32, // how "reachable" the service is to customers
-    hr: HumanResource,
-}
-
-/**
- * Right now, my thought about trading is run a simple flow algorithm on a minimum spanning tree, such that
- * anyone would take the cargo further away from the source
- * - idea: goods "radiate" from a supply source, each temporary destination of goods increases the distance (radius) of the source
- * - metric: distance of 2 nodes in the minimum spanning tree
- * - goods distribution in total, 2 cases:
- *      - if supply > demands, then reserve the needed quantity, and then split the rest proportionally by demands
- *      - otherwise rank the colonies and transport goods to those them greedily
- *          - rank by importance of the goods (say, food, tools, machines, metal)
- *          - rank by $ investment to the colonies
- * - next destination:
- *      - search all colonies that company has storage within radius R
- *      - look for colonies with the highest demands
- */
-#[derive(Default, Clone)]
-struct RelayQtys {
-    total_qty: u32, // sum of quantities from distribution
-    distribution: HashMap<usize, HashMap<usize, u32>>, // src idx -> buyer -> positive qty
-}
-
-// bookeeping data for the destination
-type IncomingQtys = EnumMap<Product, HashMap<usize, u32>>; // fleet id -> positive qty
-
-#[wasm_bindgen]
-#[derive(Default, Clone)]
-pub struct ProductParams {
-    // production
-    pub production_capacity: u32,
-
-    // storage - first take from local qty, then take from anything that can be relayed
-    strategy: TradeStrategy,
-    pub qty: u32,
-    relay: RelayQtys,
-    incoming: IncomingQtys, // "future" quantities when transport fleets safely arrive
-
-                            // total qty = qty + sum of outgoing quantities
 }
 
 #[wasm_bindgen]
@@ -651,12 +551,12 @@ pub enum Direction {
     West,
 }
 
-type SupportDecisions = HashMap<SpecialistId, bool>;
+type SupportDecisions = HashMap<PeopleId, bool>;
 
 enum NationalTopic {
     Leadership {
-        candidates: Vec<SpecialistId>,
-        support: HashMap<SpecialistId, HashSet<SpecialistId>>,
+        candidates: Vec<PeopleId>,
+        support: HashMap<PeopleId, HashSet<PeopleId>>,
     },
     ImportTariffs(HashMap<(NationId, Product), (f32, SupportDecisions)>),
     ExportTariffs(HashMap<(NationId, Product), (f32, SupportDecisions)>),
@@ -705,7 +605,7 @@ struct Nation {
     prev_discuss_date: u64,
 
     leader: Option<NationalLeadership>,
-    political_parties: Vec<SpecialistId>,
+    political_parties: Vec<PeopleId>,
 
     // internals
     stability: u32,
@@ -798,112 +698,42 @@ pub enum SpacecraftKind {
     Constructor, // construct station or shipyard; or repair
 }
 
-#[derive(Default)]
-struct Spacecrafts {
-    // data
-    freighters: Vec<Freighter>,
-    fighters: Vec<BaseCraft>,
-    bombers: Vec<BaseCraft>,
-    construstors: Vec<Construstor>,
-    troopers: Vec<Trooper>,
-    destroyers: Vec<BaseCraft>,
-    bombard_crafts: Vec<BaseCraft>,
-    battleships: Vec<BaseCraft>,
-    stations: Vec<Station>,
-    fortresses: Vec<Fortress>,
-    carriers: Vec<Carrier>,
-    shipyards: Vec<Shipyard>,
+#[derive(Debug, Default)]
+struct FleetData {
+    tech: u32,           // can retrofit to higher tech level
+    desired_factor: u32, // automatically place orders to shipyards
+    actual_qty: u32,     // the actual amount of spacecrafts in the fleet
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TravelTarget {
+    Coor(CartesianCoor),
+    City(CityId),
+}
+
+enum FleetAction {
+    Travel(TravelTarget),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FleetState {
+    Docked(CityId),
+    Undocking(CityId),
+    Travel(CartesianCoor, TravelTarget),
+    Ready(CartesianCoor),
 }
 
 struct Fleet {
-    composition: EnumMap<SpacecraftKind, u32>,
-    ships: EnumMap<SpacecraftKind, u32>,
-}
-
-#[derive(Default)]
-struct BaseCraftStructure {
-    // structure
-    weapon: u32,
-    shield: u32,
-    shield_charge: f32,
-    hull: u32,
-    engine: u32,
-
-    // consumable
-    ammunition: u32,
-    fuel: u32,
-
-    // boarding
-    crew: Soldiers,
+    composition: EnumMap<SpacecraftKind, FleetData>,
+    cargo: EnumMap<Product, u32>,
+    state: FleetState,
+    actions: VecDeque<FleetAction>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 enum Faction {
     Nation(NationId),
     Corporation(CorporationId),
-}
-
-struct BaseCraft {
-    design_faction: Faction, // determines the max
-    owner: Faction,
-    structure: BaseCraftStructure,
-    coor: Point2<f32>,
-}
-
-struct DockingRings {
-    ships: Vec<(usize, u8)>,              // ship id, undock count-down
-    land_requests: VecDeque<(usize, u8)>, // ship id, dock count-down
-    parts: u16,
-}
-
-struct Freighter {
-    space_craft: BaseCraft,
-    storage: ProductMapU,
-}
-
-struct Station {
-    space_craft: BaseCraft,
-    colony: usize,
-    docking_rings: DockingRings,
-}
-
-struct Trooper {
-    space_craft: BaseCraft,
-    soldiers: Soldiers,
-}
-
-struct Carrier {
-    space_craft: BaseCraft,
-    storage: ProductMapU,
-    docking_rings: DockingRings,
-    hanger: DockingRings, // hold small spacecrafts, provide repair
-}
-
-struct Fortress {
-    space_craft: BaseCraft,
-    storage: ProductMapU,
-    docking_rings: DockingRings,
-}
-
-struct Construstor {
-    space_craft: BaseCraft,
-    storage: ProductMapU,
-    docking_rings: DockingRings,
-    target: (SpacecraftKind, usize),
-}
-
-struct ConstructionYards {
-    queued_projects: VecDeque<SpacecraftKind>,
-    ships: Vec<(SpacecraftKind, ProductMapU, u32)>, // ship kind, resource delivered, assemble progress
-    parts: u16,
-}
-
-struct Shipyard {
-    space_craft: BaseCraft,
-    storage: ProductMapU,
-    queued_projects: VecDeque<SpacecraftKind>,
-    docking_rings: DockingRings,
-    construction_yards: ConstructionYards, // provide repair & constructions
 }
 
 #[wasm_bindgen]

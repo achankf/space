@@ -67,6 +67,31 @@ impl IndexMut<CityId> for CityIdToVertex {
     }
 }
 
+impl FleetId {
+    pub fn new(galaxy: &Galaxy, idx: usize) -> Self {
+        assert!((idx as usize) < galaxy.fleets.len());
+        Self(idx)
+    }
+
+    pub fn from_usize(galaxy: &Galaxy, idx: usize) -> Self {
+        Self::new(galaxy, idx)
+    }
+}
+
+impl Index<FleetId> for Vec<Fleet> {
+    type Output = Fleet;
+
+    fn index(&self, FleetId(idx): FleetId) -> &Self::Output {
+        &self[idx as usize]
+    }
+}
+
+impl IndexMut<FleetId> for Vec<Fleet> {
+    fn index_mut<'a>(&'a mut self, FleetId(idx): FleetId) -> &'a mut Self::Output {
+        &mut self[idx as usize]
+    }
+}
+
 impl Index<CityId> for Vec<City> {
     type Output = City;
 

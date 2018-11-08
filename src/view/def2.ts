@@ -24,8 +24,15 @@ export interface IDrawShipData {
     y: number;
 }
 
+export interface IDrawFleetData {
+    radius: number;
+    x: number;
+    y: number;
+}
+
 export interface IDrawGalaxyData {
     planets: IDrawPlanetData[];
     stars: IDrawStarData[];
     ships: IDrawShipData[];
+    fleets: IDrawFleetData[];
 }

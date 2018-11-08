@@ -177,6 +177,39 @@ export class GalaxyView
 
         this.drawCelestrialObjects(drawData);
         this.tryDrawCities(drawData);
+        this.drawFleets(drawData);
+    }
+
+    private drawFleets(drawData: IDrawGalaxyData) {
+
+        const db = this.db;
+        const viewData = db.galaxyViewData;
+        const ctx = this.ctx;
+
+        ctx.save();
+
+        // Set up the affine transformation matrix, so that drawing calls can be done in model coordinates.
+        {
+            // move viewport to the origin (which is the center of the screen, due to easy zooming)
+            ctx.translate(this.width / 2, this.height / 2);
+
+            ctx.scale(viewData.gridSize, viewData.gridSize);
+
+            // move to the location that user has panned to
+            const [dox, doy] = viewData.diffFromOrigin;
+            ctx.translate(dox, doy);
+        }
+
+        ctx.fillStyle = "red";
+
+        ctx.beginPath();
+        for (const { x, y, radius } of drawData.fleets) {
+            ctx.arc(x, y, 10 * radius / viewData.gridSize, 0, TWO_PI);
+            ctx.closePath();
+        }
+        ctx.fill();
+
+        ctx.restore();
     }
 
     private drawCelestrialObjects(drawData: IDrawGalaxyData) {

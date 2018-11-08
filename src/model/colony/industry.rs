@@ -101,36 +101,36 @@ impl Industry {
 
 impl fmt::Display for Industry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn sector_to_string((product, sector): (Product, &IndustrySector)) -> String {
+            format!(
+                "{:<3} {:<15} {}\n",
+                product as u32,
+                product.to_string(),
+                sector,
+            )
+        }
+
+        let header = format!(
+            "Id  {:<15} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15}\n",
+            "product",
+            "scale",
+            "#employees",
+            "op eff.",
+            "tech",
+            "storage scale",
+            "storage qty",
+            "in-transport qty",
+        );
+
         let ret = &self
             .0
             .iter()
-            .map(|(product, sector)| {
-                format!(
-                    "{:<15} {}
-",
-                    product.to_string(),
-                    sector,
-                )
-            })
-            .fold(
-                format!(
-                    "
-{:<15} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15}
-",
-                    "product",
-                    "scale",
-                    "#employees",
-                    "op eff.",
-                    "tech",
-                    "storage scale",
-                    "storage qty",
-                    "in-transport qty",
-                ),
-                |mut acc, cur| {
-                    acc.push_str(&cur);
-                    acc
-                },
-            );
-        write!(f, "{}", ret)
+            .map(sector_to_string)
+            .fold(header, |mut acc, cur| {
+                // aka "join"
+                acc.push_str(&cur);
+                acc
+            });
+        write!(f, "{}\n", ret)
     }
 }

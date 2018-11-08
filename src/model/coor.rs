@@ -1,16 +1,16 @@
 use constants::TWO_PI;
 use ordered_float::NotNan;
 use rand::Rng;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Mul, Sub};
 use wbg_rand;
 
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct CartesianCoor {
     x: NotNan<f32>,
     y: NotNan<f32>,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PolarCoor {
     r: NotNan<f32>,
     θ: NotNan<f32>,
@@ -120,6 +120,18 @@ impl Add for CartesianCoor {
         Self {
             x: x1 + x0,
             y: y1 + y0,
+        }
+    }
+}
+
+impl Mul<f32> for CartesianCoor {
+    type Output = Self;
+
+    fn mul(self, scalar: f32) -> Self {
+        let Self { x: x1, y: y1 } = self;
+        Self {
+            x: x1 * scalar,
+            y: y1 * scalar,
         }
     }
 }

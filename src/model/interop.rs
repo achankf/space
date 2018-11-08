@@ -1,7 +1,6 @@
 use constants::CITY_RADIUS_LIMIT;
 use coor::PolarCoor;
 use delaunator::{triangulate, Point};
-use nalgebra::geometry::Point2;
 use rand::prng::isaac::IsaacRng;
 use rand::Rng;
 use std::collections::HashMap;

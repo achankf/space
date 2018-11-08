@@ -6,31 +6,6 @@ use City;
 use Product;
 
 impl City {
-    pub fn new() -> Self {
-        City {
-            population: 10000,
-            consumption_lvl: 0.,
-            education_lvl: 0.,
-            health_lvl: 0.,
-            safety_lvl: 0.,
-            infrastructure_lvl: 0.,
-            energy_lvl: 0.,
-            telecom_lvl: 0.,
-            development: 0,
-            facilities: Default::default(),
-            facility_points: 0,
-            num_facilities: 0,
-            educated: 0,
-            role_distribution: Default::default(),
-            influence: Default::default(),
-            owner: None,
-            controller: None,
-            industry: Default::default(),
-            tech: Default::default(),
-            transporters: Default::default(),
-        }
-    }
-
     // calculate how much goods should be held on to before reseller
     pub fn cal_min_hold_factor(&self) -> f32 {
         const MIN_FACTOR: f32 = 1.2;
@@ -111,10 +86,10 @@ impl City {
     pub fn cal_civilian_consumption_demands(&self) -> EnumMap<Product, u32> {
         let mut ret = EnumMap::default();
 
-        let population = self.population;
-        ret[Product::Food] = population;
-        ret[Product::Drink] = population;
-        ret[Product::Apparel] = population;
+        // let population = self.population;
+        // ret[Product::Food] = population;
+        // ret[Product::Drink] = population;
+        // ret[Product::Apparel] = population;
 
         ret
     }
@@ -161,6 +136,7 @@ impl City {
 
 impl fmt::Display for City {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "population: {}\n{}", self.population, self.industry)
+        write!(f, "{}", self.industry)
+        // write!(f, "population: {}\n{}", self.population, self.industry)
     }
 }
